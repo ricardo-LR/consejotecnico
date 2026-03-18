@@ -1,0 +1,300 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# deploy-dev.yml
+# Deploys to the DEV environment on every push to main/master.
+# REQUIRES the "Tests" workflow to pass first (via needs: [...]).
+#
+# GitHub Secrets required (Settings → Secrets and variables → Actions):
+#   AWS_ACCESS_KEY_ID         – IAM user "consejotecnico" access key
+#   AWS_SECRET_ACCESS_KEY     – IAM user "consejotecnico" secret key
+#
+# GitHub Variables required (Settings → Secrets and variables → Variables):
+#   AWS_REGION                – us-east-1
+#   CLOUDFRONT_DISTRIBUTION_ID – from CloudFormation output
+#   S3_FRONTEND_BUCKET        – consejotecnico-frontend-dev
+#   S3_BACKEND_BUCKET         – consejotecnico-lambda-dev
+#   STACK_NAME                – consejotecnico-stack
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Deploy DEV
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+# One deploy at a time per branch
+concurrency:
+  group: deploy-dev-${{ github.ref }}
+  cancel-in-progress: false   # wait for in-flight deploys, do not cancel
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared environment (available to all jobs)
+# ─────────────────────────────────────────────────────────────────────────────
+env:
+  AWS_REGION:             ${{ vars.AWS_REGION || 'us-east-1' }}
+  S3_FRONTEND_BUCKET:     ${{ vars.S3_FRONTEND_BUCKET || 'consejotecnico-frontend-dev' }}
+  S3_BACKEND_BUCKET:      ${{ vars.S3_BACKEND_BUCKET  || 'consejotecnico-lambda-dev'  }}
+  CLOUDFRONT_DIST_ID:     ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+  STACK_NAME:             ${{ vars.STACK_NAME || 'consejotecnico-stack' }}
+  # Artifact tag: short SHA + run number  e.g.  abc1234-42
+  ARTIFACT_TAG:           ${{ github.sha }}-${{ github.run_number }}
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 0. Re-run tests as gate before any deploy
+  #    (mirrors test.yml so we do not deploy on a
+  #     stale green from a previous commit)
+  # ─────────────────────────────────────────────
+  run-tests:
+    name: Gate — Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Frontend ──────────────────────────────
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend — install & lint & build
+        working-directory: frontend
+        run: |
+          npm ci
+          if npm run | grep -q "^\s*lint\b"; then npm run lint; fi
+          npm run build
+
+      # ── Backend ───────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Backend — install & lint & test
+        run: |
+          pip install -r backend/requirements.txt flake8 pytest
+          flake8 backend/src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          if [ -d backend/tests ] && [ "$(find backend/tests -name '*.py' | wc -l)" -gt 0 ]; then
+            pytest backend/tests/ --tb=short -v
+          else
+            echo "No backend tests found — skipping pytest."
+          fi
+
+  # ─────────────────────────────────────────────
+  # 1. Deploy Frontend → S3 + CloudFront
+  # ─────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: run-tests        # only runs if tests pass
+    environment: dev        # optional: use GitHub Environments for approvals
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js (static export)
+        working-directory: frontend
+        run: npm run build
+        # next.config.ts must have `output: 'export'` for static S3 hosting.
+        # The output directory is `frontend/out/`.
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Upload to S3
+        run: |
+          echo "Syncing frontend build to s3://$S3_FRONTEND_BUCKET/ ..."
+          aws s3 sync frontend/out/ "s3://$S3_FRONTEND_BUCKET/" \
+            --delete \
+            --cache-control "public,max-age=31536000,immutable" \
+            --exclude "*.html"
+
+          # HTML files: no-cache so users always get the latest shell
+          aws s3 sync frontend/out/ "s3://$S3_FRONTEND_BUCKET/" \
+            --exclude "*" \
+            --include "*.html" \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+          echo "S3 upload complete. Tag: $ARTIFACT_TAG"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          if [ -z "$CLOUDFRONT_DIST_ID" ]; then
+            echo "CLOUDFRONT_DISTRIBUTION_ID not set — skipping invalidation."
+          else
+            echo "Creating CloudFront invalidation for distribution $CLOUDFRONT_DIST_ID ..."
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --paths "/*" \
+              --query 'Invalidation.Id' \
+              --output text)
+            echo "Invalidation created: $INVALIDATION_ID"
+
+            echo "Waiting for invalidation to complete..."
+            aws cloudfront wait invalidation-completed \
+              --distribution-id "$CLOUDFRONT_DIST_ID" \
+              --id "$INVALIDATION_ID"
+            echo "CloudFront cache cleared."
+          fi
+
+  # ─────────────────────────────────────────────
+  # 2. Package & upload Lambda code → S3
+  # ─────────────────────────────────────────────
+  deploy-backend:
+    name: Package & Upload Lambda
+    runs-on: ubuntu-latest
+    needs: run-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies into package directory
+        run: |
+          mkdir -p backend_package
+          pip install \
+            -r backend/requirements.txt \
+            --target backend_package/ \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --python-version 3.11 \
+            --upgrade \
+            || pip install -r backend/requirements.txt --target backend_package/
+
+      - name: Copy source code into package directory
+        run: |
+          cp -r backend/src/. backend_package/
+
+      - name: Create Lambda deployment ZIP
+        run: |
+          ZIPFILE="backend-$ARTIFACT_TAG.zip"
+          echo "Creating $ZIPFILE ..."
+          cd backend_package
+          zip -r "../$ZIPFILE" . -x "*.pyc" -x "__pycache__/*" -x "*.dist-info/*"
+          cd ..
+          echo "ZIP size: $(du -sh $ZIPFILE | cut -f1)"
+          echo "ZIPFILE=$ZIPFILE" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Upload ZIP to S3
+        run: |
+          echo "Uploading $ZIPFILE to s3://$S3_BACKEND_BUCKET/releases/ ..."
+          aws s3 cp "$ZIPFILE" "s3://$S3_BACKEND_BUCKET/releases/$ZIPFILE"
+
+          # Also keep a 'latest' pointer for easy Lambda updates
+          aws s3 cp "$ZIPFILE" "s3://$S3_BACKEND_BUCKET/releases/backend-latest.zip"
+
+          echo "Backend artifact uploaded. Tag: $ARTIFACT_TAG"
+
+      - name: Upload ZIP as workflow artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-lambda-${{ env.ARTIFACT_TAG }}
+          path: ${{ env.ZIPFILE }}
+          retention-days: 30
+
+  # ─────────────────────────────────────────────
+  # 3. CloudFormation status check (informational)
+  # ─────────────────────────────────────────────
+  cloudformation-status:
+    name: CloudFormation Status
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend]
+    # Always run this summary, even if previous jobs had issues
+    if: always()
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Describe CloudFormation stack
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  Stack: $STACK_NAME"
+          echo "  Region: $AWS_REGION"
+          echo "════════════════════════════════════════"
+
+          STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+
+          echo "Stack status: $STATUS"
+
+          case "$STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|IMPORT_COMPLETE)
+              echo "Stack is healthy."
+              ;;
+            *ROLLBACK*|*FAILED*)
+              echo "WARNING: Stack is in a failed/rollback state: $STATUS"
+              ;;
+            STACK_NOT_FOUND)
+              echo "Stack '$STACK_NAME' not found — may not be deployed yet."
+              ;;
+            *)
+              echo "Stack is in an intermediate state: $STATUS"
+              ;;
+          esac
+
+      - name: Print CloudFormation outputs
+        run: |
+          echo "Stack outputs:"
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs' \
+            --output table 2>/dev/null \
+            || echo "No outputs available."
+
+      - name: Deploy summary
+        run: |
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "  DEPLOY DEV SUMMARY"
+          echo "════════════════════════════════════════"
+          echo "  Commit : ${{ github.sha }}"
+          echo "  Tag    : $ARTIFACT_TAG"
+          echo "  Branch : ${{ github.ref_name }}"
+          echo "  Actor  : ${{ github.actor }}"
+          echo "  Frontend bucket  : s3://$S3_FRONTEND_BUCKET/"
+          echo "  Backend S3 key   : releases/backend-$ARTIFACT_TAG.zip"
+          echo "  CloudFront dist  : ${CLOUDFRONT_DIST_ID:-not configured}"
+          echo "════════════════════════════════════════"

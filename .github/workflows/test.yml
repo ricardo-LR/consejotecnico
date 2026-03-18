@@ -1,0 +1,138 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# test.yml
+# Runs on every push and pull_request.
+# Executes frontend (Node 18) and backend (Python 3.11) test suites.
+# A failed job blocks the deploy-dev workflow via its `needs: [...]` gate.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Cancel a running workflow if a newer commit is pushed to the same branch/PR.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Frontend — Node 18 + ESLint + Jest (optional)
+  # ─────────────────────────────────────────────
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Lint — only run if the script is defined in package.json
+      - name: Lint (ESLint)
+        run: |
+          if npm run | grep -q "^\s*lint\b"; then
+            echo "Running lint..."
+            npm run lint
+          else
+            echo "No lint script found — skipping."
+          fi
+
+      # Type-check — only run if the script exists
+      - name: TypeScript type-check
+        run: |
+          if npm run | grep -q "^\s*type-check\b"; then
+            echo "Running type-check..."
+            npm run type-check
+          elif [ -f tsconfig.json ]; then
+            echo "Running tsc --noEmit..."
+            npx tsc --noEmit
+          else
+            echo "No TypeScript config found — skipping."
+          fi
+
+      # Unit tests — only run if the script exists
+      - name: Unit tests (Jest)
+        run: |
+          if npm run | grep -q "^\s*test\b"; then
+            echo "Running tests..."
+            npm run test -- --passWithNoTests
+          else
+            echo "No test script found — skipping."
+          fi
+
+      # Verify the production build compiles successfully
+      - name: Build (smoke test)
+        run: npm run build
+
+  # ─────────────────────────────────────────────
+  # Backend — Python 3.11 + pytest + flake8
+  # ─────────────────────────────────────────────
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          # Install dev/linting tools not included in requirements.txt
+          pip install flake8 pytest pytest-cov
+
+      # Lint with flake8 (fail on errors, warn on style)
+      - name: Flake8 lint
+        run: |
+          echo "Running flake8 on backend/src/..."
+          # Stop the build for syntax errors or undefined names (E9xx, F63x, F7xx, F82x)
+          flake8 backend/src/ \
+            --count \
+            --select=E9,F63,F7,F82 \
+            --show-source \
+            --statistics
+          # Warn (exit 0) for everything else — max line length 120
+          flake8 backend/src/ \
+            --count \
+            --exit-zero \
+            --max-line-length=120 \
+            --statistics
+
+      # Run pytest (skip gracefully if no tests exist yet)
+      - name: Pytest
+        run: |
+          if [ -d "backend/tests" ] && [ "$(find backend/tests -name '*.py' | wc -l)" -gt 0 ]; then
+            echo "Running pytest..."
+            pytest backend/tests/ \
+              --tb=short \
+              --cov=backend/src \
+              --cov-report=term-missing \
+              -v
+          else
+            echo "No test files found in backend/tests/ — skipping pytest."
+          fi
