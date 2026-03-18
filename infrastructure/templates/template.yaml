@@ -1,0 +1,506 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  ConsejoCTecnico infrastructure — S3, CloudFront, DynamoDB tables,
+  and IAM role for Lambda execution.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Metadata
+# ─────────────────────────────────────────────────────────────────────────────
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - AppName
+          - Environment
+    ParameterLabels:
+      AppName:
+        default: Application Name (used as prefix for resource names)
+      Environment:
+        default: Deployment environment (dev / stg / prod)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parameters
+# ─────────────────────────────────────────────────────────────────────────────
+Parameters:
+  AppName:
+    Type: String
+    Default: consejotecnico
+    Description: Application name prefix for all resources
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - stg
+      - prod
+    Description: Deployment environment
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Conditions
+# ─────────────────────────────────────────────────────────────────────────────
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resources
+# ─────────────────────────────────────────────────────────────────────────────
+Resources:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # S3 — Frontend Bucket
+  # ───────────────────────────────────────────────────────────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AppName}-frontend-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: frontend
+
+  # Bucket policy — allow CloudFront OAI to read objects
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontOAI
+            Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # S3 — Files Bucket
+  # ───────────────────────────────────────────────────────────────────────────
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AppName}-files-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: storage
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # CloudFront — Origin Access Identity
+  # ───────────────────────────────────────────────────────────────────────────
+  CloudFrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${AppName}-${Environment} frontend bucket'
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # CloudFront — Distribution
+  # ───────────────────────────────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub '${AppName} ${Environment} frontend distribution'
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+
+        Origins:
+          - Id: S3FrontendOrigin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3FrontendOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized (AWS managed)
+          Compress: true
+
+        # Serve index.html for SPA client-side routing
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+
+        PriceClass: PriceClass_100
+
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: cdn
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DynamoDB — Users Table
+  # ───────────────────────────────────────────────────────────────────────────
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AppName}-users'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: database
+        - Key: BackupPolicy
+          Value: daily
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DynamoDB — Planeaciones Table
+  # ───────────────────────────────────────────────────────────────────────────
+  PlaneacionesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AppName}-planeaciones'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: planeacionId
+          AttributeType: S
+        - AttributeName: tema
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: planeacionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: tema-createdAt
+          KeySchema:
+            - AttributeName: tema
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: database
+        - Key: BackupPolicy
+          Value: daily
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DynamoDB — Purchases Table
+  # ───────────────────────────────────────────────────────────────────────────
+  PurchasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AppName}-purchases'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: purchaseId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: purchaseId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-createdAt
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: database
+        - Key: BackupPolicy
+          Value: daily
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DynamoDB — Subscriptions Table
+  # ───────────────────────────────────────────────────────────────────────────
+  SubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AppName}-subscriptions'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: database
+        - Key: BackupPolicy
+          Value: daily
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DynamoDB — Downloads Table
+  # ───────────────────────────────────────────────────────────────────────────
+  DownloadsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AppName}-downloads'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: downloadId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: downloadId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+        - Key: Component
+          Value: database
+        - Key: BackupPolicy
+          Value: daily
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IAM — Lambda Execution Role
+  # ───────────────────────────────────────────────────────────────────────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AppName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDBTableAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt PlaneacionesTable.Arn
+                  - !GetAtt PurchasesTable.Arn
+                  - !GetAtt SubscriptionsTable.Arn
+                  - !GetAtt DownloadsTable.Arn
+              - Sid: DynamoDBGSIAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !Sub '${PlaneacionesTable.Arn}/index/*'
+                  - !Sub '${PurchasesTable.Arn}/index/*'
+                  - !Sub '${DownloadsTable.Arn}/index/*'
+        - PolicyName: S3FilesAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3FilesReadWrite
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${FilesBucket.Arn}/*'
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*'
+      Tags:
+        - Key: Project
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref AppName
+        - Key: ManagedBy
+          Value: cloudformation
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Outputs
+# ─────────────────────────────────────────────────────────────────────────────
+Outputs:
+  FrontendBucketName:
+    Description: Frontend S3 Bucket Name
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AppName}-frontend-bucket'
+
+  FilesBucketName:
+    Description: Files S3 Bucket Name
+    Value: !Ref FilesBucket
+    Export:
+      Name: !Sub '${AppName}-files-bucket'
+
+  CloudFrontDomainName:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${AppName}-cloudfront-domain'
+
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${AppName}-cloudfront-id'
+
+  LambdaExecutionRoleArn:
+    Description: Lambda Execution Role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AppName}-lambda-role-arn'
+
+  UsersTableName:
+    Description: Users DynamoDB Table Name
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub '${AppName}-users-table'
+
+  PlaneacionesTableName:
+    Description: Planeaciones DynamoDB Table Name
+    Value: !Ref PlaneacionesTable
+    Export:
+      Name: !Sub '${AppName}-planeaciones-table'
+
+  PurchasesTableName:
+    Description: Purchases DynamoDB Table Name
+    Value: !Ref PurchasesTable
+    Export:
+      Name: !Sub '${AppName}-purchases-table'
+
+  SubscriptionsTableName:
+    Description: Subscriptions DynamoDB Table Name
+    Value: !Ref SubscriptionsTable
+    Export:
+      Name: !Sub '${AppName}-subscriptions-table'
+
+  DownloadsTableName:
+    Description: Downloads DynamoDB Table Name
+    Value: !Ref DownloadsTable
+    Export:
+      Name: !Sub '${AppName}-downloads-table'
