@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
+const API_URL = 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
+
 interface User {
   id: string;
   email: string;
@@ -36,37 +38,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ action: 'login', email, password }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Error al iniciar sesión');
-    }
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Error al iniciar sesión');
+    }
+    const user: User = {
+      id: data.email,
+      email: data.email,
+      name: data.nombre,
+      subscription: data.plan_type,
+    };
     setToken(data.token);
-    setUser(data.user);
+    setUser(user);
     localStorage.setItem('auth_token', data.token);
-    localStorage.setItem('auth_user', JSON.stringify(data.user));
+    localStorage.setItem('auth_user', JSON.stringify(user));
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ action: 'register', email, password, nombre: name }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Error al registrarse');
-    }
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Error al registrarse');
+    }
+    const user: User = {
+      id: data.email,
+      email: data.email,
+      name: data.nombre,
+      subscription: data.plan_type,
+    };
     setToken(data.token);
-    setUser(data.user);
+    setUser(user);
     localStorage.setItem('auth_token', data.token);
-    localStorage.setItem('auth_user', JSON.stringify(data.user));
+    localStorage.setItem('auth_user', JSON.stringify(user));
   }, []);
 
   const logout = useCallback(() => {

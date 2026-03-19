@@ -68,7 +68,13 @@ export default function PlaneacionCard({ planeacion }: PlaneacionCardProps) {
             {price === 0 ? 'Gratis' : `$${price.toFixed(2)}`}
           </span>
           <Link
-            href={`/catalog/${id}`}
+            href={
+              isPurchased
+                ? `/catalog/${id}`
+                : price === 0
+                ? `/catalog/${id}`
+                : `/checkout?planeacion_id=${id}&plan_type=individual`
+            }
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               isPurchased
                 ? 'bg-green-600 text-white hover:bg-green-700'

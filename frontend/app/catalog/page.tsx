@@ -3,21 +3,27 @@
 import { useState, useEffect, useCallback } from 'react';
 import PlaneacionCard, { Planeacion } from '@/components/PlaneacionCard';
 
+const API_URL = 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
+
 const SUBJECTS = ['Todos', 'Matemáticas', 'Español', 'Ciencias', 'Historia', 'Geografía', 'Arte'];
 const GRADES = ['Todos', '1°', '2°', '3°', '4°', '5°', '6°'];
 const PRICES = ['Todos', 'Gratis', 'Hasta $50', 'Hasta $100', 'Más de $100'];
 const PAGE_SIZE = 9;
 
-const MOCK_PLANEACIONES: Planeacion[] = Array.from({ length: 24 }, (_, i) => ({
-  id: String(i + 1),
-  title: `Planeación de ${SUBJECTS[(i % (SUBJECTS.length - 1)) + 1]} – Unidad ${i + 1}`,
-  description: 'Planeación detallada con actividades, materiales, evaluación y competencias alineadas al plan de estudios.',
-  subject: SUBJECTS[(i % (SUBJECTS.length - 1)) + 1],
-  grade: GRADES[(i % (GRADES.length - 1)) + 1],
-  price: i % 4 === 0 ? 0 : [49, 79, 99, 149][i % 4],
-  rating: 3.5 + (i % 3) * 0.5,
-  reviewCount: 5 + i * 3,
-}));
+// Map a raw DynamoDB item to the Planeacion interface
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapItem(raw: Record<string, any>): Planeacion {
+  return {
+    id: String(raw.planeacionId ?? raw.id ?? ''),
+    title: String(raw.titulo ?? raw.title ?? 'Sin título'),
+    description: String(raw.descripcion ?? raw.description ?? ''),
+    subject: String(raw.tema ?? raw.subject ?? ''),
+    grade: String(raw.grado ?? raw.grade ?? ''),
+    price: Number(raw.precio ?? raw.price ?? 0),
+    rating: Number(raw.rating ?? 0),
+    reviewCount: Number(raw.reviewCount ?? raw.review_count ?? 0),
+  };
+}
 
 export default function CatalogPage() {
   const [search, setSearch] = useState('');
@@ -26,29 +32,50 @@ export default function CatalogPage() {
   const [price, setPrice] = useState('Todos');
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  const [items, setItems] = useState<Planeacion[]>([]);
+  const [error, setError] = useState('');
+  const [rawItems, setRawItems] = useState<Planeacion[]>([]);
+  const [hasMore, setHasMore] = useState(false);
 
-  const filter = useCallback(() => {
+  const fetchPlaneaciones = useCallback(async (tema: string, grado: string, pg: number) => {
     setIsLoading(true);
-    setTimeout(() => {
-      let result = MOCK_PLANEACIONES;
-      if (search) result = result.filter((p) => p.title.toLowerCase().includes(search.toLowerCase()));
-      if (subject !== 'Todos') result = result.filter((p) => p.subject === subject);
-      if (grade !== 'Todos') result = result.filter((p) => p.grade === grade);
-      if (price === 'Gratis') result = result.filter((p) => p.price === 0);
-      else if (price === 'Hasta $50') result = result.filter((p) => p.price > 0 && p.price <= 50);
-      else if (price === 'Hasta $100') result = result.filter((p) => p.price > 0 && p.price <= 100);
-      else if (price === 'Más de $100') result = result.filter((p) => p.price > 100);
-      setItems(result);
-      setPage(1);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: String(pg) });
+      if (tema !== 'Todos') params.set('tema', tema);
+      if (grado !== 'Todos') params.set('grado', grado);
+
+      const res = await fetch(`${API_URL}/planeaciones?${params}`);
+      if (!res.ok) throw new Error('Error al cargar planeaciones');
+      const data = await res.json();
+
+      setRawItems((data.planeaciones ?? []).map(mapItem));
+      setHasMore(data.has_more ?? false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar planeaciones');
+      setRawItems([]);
+    } finally {
       setIsLoading(false);
-    }, 400);
-  }, [search, subject, grade, price]);
+    }
+  }, []);
 
-  useEffect(() => { filter(); }, [filter]);
+  // Reset to page 1 when server-side filters change
+  useEffect(() => {
+    setPage(1);
+  }, [subject, grade]);
 
-  const totalPages = Math.ceil(items.length / PAGE_SIZE);
-  const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  useEffect(() => {
+    fetchPlaneaciones(subject, grade, page);
+  }, [subject, grade, page, fetchPlaneaciones]);
+
+  // Client-side filters for search and price (applied on current page's results)
+  const filtered = rawItems.filter((p) => {
+    if (search && !p.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (price === 'Gratis') return p.price === 0;
+    if (price === 'Hasta $50') return p.price > 0 && p.price <= 50;
+    if (price === 'Hasta $100') return p.price > 0 && p.price <= 100;
+    if (price === 'Más de $100') return p.price > 100;
+    return true;
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -110,8 +137,23 @@ export default function CatalogPage() {
         </div>
       </div>
 
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700" role="alert">
+          {error}
+          <button
+            onClick={() => fetchPlaneaciones(subject, grade, page)}
+            className="ml-3 font-semibold underline hover:no-underline"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {/* Results count */}
-      <p className="text-sm text-gray-500 mb-4">{items.length} planeaciones encontradas</p>
+      {!isLoading && !error && (
+        <p className="text-sm text-gray-500 mb-4">{filtered.length} planeaciones encontradas</p>
+      )}
 
       {/* Grid */}
       {isLoading ? (
@@ -120,7 +162,7 @@ export default function CatalogPage() {
             <div key={i} className="bg-gray-100 rounded-xl h-72 animate-pulse" aria-hidden="true" />
           ))}
         </div>
-      ) : paged.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <svg className="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -130,15 +172,15 @@ export default function CatalogPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {paged.map((p) => (
+          {filtered.map((p) => (
             <PlaneacionCard key={p.id} planeacion={p} />
           ))}
         </div>
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-10" role="navigation" aria-label="Paginación">
+      {(page > 1 || hasMore) && !isLoading && (
+        <div className="flex justify-center items-center gap-4 mt-10" role="navigation" aria-label="Paginación">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
@@ -147,22 +189,10 @@ export default function CatalogPage() {
           >
             Anterior
           </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              onClick={() => setPage(n)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                n === page ? 'bg-blue-600 text-white' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
-              }`}
-              aria-label={`Página ${n}`}
-              aria-current={n === page ? 'page' : undefined}
-            >
-              {n}
-            </button>
-          ))}
+          <span className="text-sm text-gray-600 font-medium">Página {page}</span>
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore}
             className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Página siguiente"
           >
