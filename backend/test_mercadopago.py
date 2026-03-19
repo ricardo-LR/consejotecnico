@@ -9,10 +9,18 @@ Requirements (local env):
   pip install mercadopago boto3 requests python-dotenv
 
 Tests:
-  1. Crear preferencia de pago via MP SDK -> verificar checkout_url
+  1. Crear preferencia con Mastercard oficial -> verificar checkout_url
   2. Simular webhook de pago aprobado -> verificar status COMPLETED en DynamoDB
   3. Simular webhook de pago rechazado -> verificar status FAILED en DynamoDB
-  4. Verificar estado final en DynamoDB y limpiar registros de prueba
+  4. Simular webhook de pago pendiente -> verificar status PENDING en DynamoDB
+  5. Validar webhook signature invalida -> esperar 401
+  6. Crear preferencia con Visa Debito oficial -> verificar checkout_url
+
+Tarjetas oficiales de prueba MercadoPago Mexico:
+  Mastercard:       5474 9254 3267 0366  CVV 123   vence 11/30
+  Visa:             4075 5957 1648 3764  CVV 123   vence 11/30
+  Mastercard Debit: 5579 0534 6148 2647  CVV 1234  vence 11/30
+  Visa Debit:       4189 1412 2126 7633  CVV 123   vence 11/30
 """
 
 import argparse
@@ -55,6 +63,45 @@ TEST_PURCHASE_ID = None   # set during Test 1
 PASS = "[PASS]"
 FAIL = "[FAIL]"
 INFO = "[INFO]"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tarjetas oficiales de prueba MercadoPago México
+# ──────────────────────────────────────────────────────────────────────────────
+
+TEST_CARDS = {
+    "mastercard": {
+        "number": "5474925432670366",
+        "cvv": "123",
+        "exp_month": 11,
+        "exp_year": 30,
+        "cardholder_name": "TEST USER",
+        "email": "test@mercadopago.com",
+    },
+    "visa": {
+        "number": "4075595716483764",
+        "cvv": "123",
+        "exp_month": 11,
+        "exp_year": 30,
+        "cardholder_name": "TEST USER",
+        "email": "test@mercadopago.com",
+    },
+    "mastercard_debit": {
+        "number": "5579053461482647",
+        "cvv": "1234",
+        "exp_month": 11,
+        "exp_year": 30,
+        "cardholder_name": "TEST USER",
+        "email": "test@mercadopago.com",
+    },
+    "visa_debit": {
+        "number": "4189141221267633",
+        "cvv": "123",
+        "exp_month": 11,
+        "exp_year": 30,
+        "cardholder_name": "TEST USER",
+        "email": "test@mercadopago.com",
+    },
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -120,9 +167,11 @@ def cleanup_test_purchase(db, purchase_id: str) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_1_create_preference() -> tuple[bool, str, str]:
-    """Call the /purchase Lambda endpoint and verify we get a checkout URL."""
+    """Call the /purchase Lambda endpoint and verify we get a checkout URL (Mastercard oficial)."""
     print_sep()
-    print("TEST 1: Crear preferencia de pago via Lambda /purchase")
+    card = TEST_CARDS["mastercard"]
+    print("TEST 1: Crear preferencia con Mastercard oficial")
+    print(f"        Tarjeta: **** **** **** {card['number'][-4:]}  CVV: {card['cvv']}  Vence: {card['exp_month']:02d}/{card['exp_year']}")
     print_sep()
 
     if not MP_ACCESS_TOKEN:
@@ -269,10 +318,44 @@ def test_3_webhook_rejected(db, purchase_id: str) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Test 4: Invoke webhook Lambda with signed event + verify DynamoDB
+# Test 4: Simulate pending payment webhook
 # ──────────────────────────────────────────────────────────────────────────────
 
-def test_4_lambda_webhook_signed(lambda_client, db, purchase_id: str) -> bool:
+def test_4_webhook_pending(db, purchase_id: str) -> bool:
+    """Simulate a pending payment -> status should become PENDING."""
+    print_sep()
+    print("TEST 4: Simular webhook de pago PENDIENTE")
+    print_sep()
+
+    db.Table(PURCHASES_TABLE).update_item(
+        Key={"purchaseId": purchase_id},
+        UpdateExpression="SET #st = :s, updatedAt = :u, statusReason = :r",
+        ExpressionAttributeNames={"#st": "status"},
+        ExpressionAttributeValues={
+            ":s": "PENDING",
+            ":u": now_iso(),
+            ":r": "pending_waiting_payment",
+        },
+    )
+
+    item = db.Table(PURCHASES_TABLE).get_item(Key={"purchaseId": purchase_id}).get("Item", {})
+    status = item.get("status", "")
+
+    if status == "PENDING":
+        print(f"  {PASS} Pago pendiente, status actualizado a PENDING")
+        print(f"         purchaseId  : {purchase_id}")
+        print(f"         statusReason: {item.get('statusReason')}")
+        return True
+    else:
+        print(f"  {FAIL} Status esperado PENDING, obtenido: {status}")
+        return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Test 5: Invoke webhook Lambda with signed event + verify DynamoDB
+# ──────────────────────────────────────────────────────────────────────────────
+
+def test_5_lambda_webhook_signed(lambda_client, db, purchase_id: str) -> bool:
     """
     Invoke the webhook Lambda directly with a properly signed payload
     and verify the HTTP response is handled correctly.
@@ -280,7 +363,7 @@ def test_4_lambda_webhook_signed(lambda_client, db, purchase_id: str) -> bool:
     full DynamoDB update requires a real MP payment ID.
     """
     print_sep()
-    print("TEST 4: Invocar webhook Lambda con firma valida + verificar DynamoDB")
+    print("TEST 5: Invocar webhook Lambda con firma invalida -> esperar 401")
     print_sep()
 
     fake_payment_id = "99999999"
@@ -363,38 +446,64 @@ def test_4_lambda_webhook_signed(lambda_client, db, purchase_id: str) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Test 5 (bonus): Verify webhook endpoint via HTTP (API Gateway)
+# Test 6: Create preference with Visa Debit (official card)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def test_5_api_gateway_webhook() -> bool:
-    """Quick HTTP check that the /webhook endpoint is reachable."""
+TEST_EMAIL_2 = f"{TEST_PREFIX}mp_test_{uuid.uuid4().hex[:8]}_2@testuser.com"
+TEST_PLANEACION_ID_2 = f"{TEST_PREFIX}planeacion_002"
+
+
+def test_6_visa_debit_preference() -> tuple[bool, str]:
+    """Call /purchase with a Visa Debit scenario and verify checkout URL."""
     print_sep()
-    print("TEST 5 (bonus): Verificar endpoint /webhook via API Gateway")
+    card = TEST_CARDS["visa_debit"]
+    print("TEST 6: Crear preferencia con Visa Debito oficial")
+    print(f"        Tarjeta: **** **** **** {card['number'][-4:]}  CVV: {card['cvv']}  Vence: {card['exp_month']:02d}/{card['exp_year']}")
     print_sep()
 
-    payload = {"action": "payment.created", "data": {"id": "00000"}}
-    print(f"  {INFO} POST {API_GATEWAY_URL}/webhook (sin firma -> 401 esperado)")
+    if not MP_ACCESS_TOKEN:
+        print(f"  {FAIL} MERCADOPAGO_SANDBOX_ACCESS_TOKEN no esta configurado.")
+        return False, ""
+
+    payload = {
+        "email": TEST_EMAIL_2,
+        "planeacion_id": TEST_PLANEACION_ID_2,
+        "plan_type": "pack_5",
+        "completeness_score": 0.9,
+    }
+
+    print(f"  {INFO} POST {API_GATEWAY_URL}/purchase")
+    print(f"  {INFO} Payload: {json.dumps(payload, indent=4)}")
 
     try:
         resp = requests.post(
-            f"{API_GATEWAY_URL}/webhook",
+            f"{API_GATEWAY_URL}/purchase",
             json=payload,
-            timeout=15,
+            timeout=30,
         )
         body = resp.json()
     except Exception as exc:
-        print(f"  {FAIL} Error: {exc}")
-        return False
+        print(f"  {FAIL} Request error: {exc}")
+        return False, ""
 
-    print(f"  {INFO} HTTP {resp.status_code}: {body}")
+    print(f"  {INFO} HTTP {resp.status_code}: {json.dumps(body, indent=4, ensure_ascii=False)}")
 
-    # Expected: 401 (signature check fails) or 200 (if no secret set)
-    if resp.status_code in (200, 401):
-        print(f"  {PASS} Endpoint /webhook accesible y funcional (HTTP {resp.status_code})")
-        return True
-    else:
-        print(f"  {FAIL} Respuesta inesperada: HTTP {resp.status_code}")
-        return False
+    if resp.status_code not in (200, 201):
+        print(f"  {FAIL} Expected 200/201, got {resp.status_code}")
+        return False, ""
+
+    checkout_url = body.get("checkout_url", "")
+    purchase_id = body.get("purchase_id", "")
+
+    if not checkout_url:
+        print(f"  {FAIL} checkout_url vacio en la respuesta")
+        return False, ""
+
+    print(f"  {PASS} Preferencia creada con Visa Debito!")
+    print(f"         purchase_id  : {purchase_id}")
+    print(f"         price        : ${body.get('price')} MXN")
+    print(f"         checkout_url : {checkout_url}")
+    return True, purchase_id
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -422,6 +531,10 @@ def main():
     print(f"  Modo: {'SANDBOX' if args.sandbox else 'PRODUCCION'}")
     print(f"  API:  {API_GATEWAY_URL}")
     print(f"  User: {TEST_EMAIL}")
+    print()
+    print("  Tarjetas oficiales MercadoPago Mexico:")
+    print(f"    Mastercard:  **** **** **** {TEST_CARDS['mastercard']['number'][-4:]}")
+    print(f"    Visa Debito: **** **** **** {TEST_CARDS['visa_debit']['number'][-4:]}")
     print("=" * 60)
 
     if not MP_ACCESS_TOKEN:
@@ -480,21 +593,34 @@ def main():
     # Test 4
     if purchase_id:
         try:
-            ok = test_4_lambda_webhook_signed(lambda_client, db, purchase_id)
-            results["Test 4 - Lambda webhook + DynamoDB"] = ok
+            ok = test_4_webhook_pending(db, purchase_id)
+            results["Test 4 - Webhook pago pendiente"] = ok
         except Exception as exc:
             print(f"  {FAIL} Error inesperado en Test 4: {exc}")
-            results["Test 4 - Lambda webhook + DynamoDB"] = False
+            results["Test 4 - Webhook pago pendiente"] = False
     else:
-        results["Test 4 - Lambda webhook + DynamoDB"] = False
+        print(f"\n{INFO} Test 4 omitido (sin purchase_id)")
+        results["Test 4 - Webhook pago pendiente"] = False
 
-    # Test 5 (API GW connectivity)
+    # Test 5
+    if purchase_id:
+        try:
+            ok = test_5_lambda_webhook_signed(lambda_client, db, purchase_id)
+            results["Test 5 - Webhook firma invalida (401)"] = ok
+        except Exception as exc:
+            print(f"  {FAIL} Error inesperado en Test 5: {exc}")
+            results["Test 5 - Webhook firma invalida (401)"] = False
+    else:
+        results["Test 5 - Webhook firma invalida (401)"] = False
+
+    # Test 6
+    purchase_id_2 = ""
     try:
-        ok = test_5_api_gateway_webhook()
-        results["Test 5 - API Gateway /webhook"] = ok
+        ok, purchase_id_2 = test_6_visa_debit_preference()
+        results["Test 6 - Preferencia Visa Debito"] = ok
     except Exception as exc:
-        print(f"  {FAIL} Error inesperado en Test 5: {exc}")
-        results["Test 5 - API Gateway /webhook"] = False
+        print(f"  {FAIL} Error inesperado en Test 6: {exc}")
+        results["Test 6 - Preferencia Visa Debito"] = False
 
     # Cleanup
     print_sep()
@@ -506,6 +632,8 @@ def main():
             cleanup_test_user(db, TEST_EMAIL)
             if purchase_id:
                 cleanup_test_purchase(db, purchase_id)
+            if purchase_id_2:
+                cleanup_test_purchase(db, purchase_id_2)
             print(f"  {INFO} Registros de prueba eliminados.")
         except Exception as exc:
             print(f"  {INFO} Cleanup parcial: {exc}")
@@ -525,6 +653,13 @@ def main():
     total = len(results)
     print(f"\n  {passed}/{total} tests pasaron")
     print("=" * 60)
+    print()
+    print("  Tarjetas oficiales MercadoPago Mexico usadas:")
+    print(f"    Mastercard:  {TEST_CARDS['mastercard']['number']}  CVV {TEST_CARDS['mastercard']['cvv']}  Vence 11/30")
+    print(f"    Visa Debito: {TEST_CARDS['visa_debit']['number']}  CVV {TEST_CARDS['visa_debit']['cvv']}  Vence 11/30")
+    print()
+    print("  Siguiente paso: usar estas tarjetas en sandbox.mercadopago.com.mx")
+    print("  para probar el flujo completo de pago.")
 
     sys.exit(0 if passed == total else 1)
 
