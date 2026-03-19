@@ -39,7 +39,7 @@ export default function RegisterPage() {
     if (!email.trim()) return 'El correo electrónico es requerido';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'El correo electrónico no es válido';
     if (!password) return 'La contraseña es requerida';
-    if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres';
+    if (password.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
     return '';
   }
 
@@ -51,7 +51,7 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       await register(name.trim(), email, password);
-      router.push('/dashboard');
+      router.push('/catalog');
     } catch (ex: unknown) {
       setError(ex instanceof Error ? ex.message : 'Error al registrarse. Inténtalo de nuevo.');
     } finally {
@@ -130,7 +130,7 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 className="w-full border border-gray-200 rounded-lg px-4 py-3 pr-12 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
                 aria-required="true"

@@ -104,7 +104,7 @@ def login(email: str, password: str) -> dict:
         email=item["email"],
         user_data={
             "nombre": item.get("nombre", ""),
-            "plan_type": item.get("plan_type", "gratis"),
+            "plan_type": item.get("plan_type", "gratuito"),
         },
     )
     return _ok(
@@ -112,7 +112,7 @@ def login(email: str, password: str) -> dict:
             "token": token,
             "email": item["email"],
             "nombre": item.get("nombre", ""),
-            "plan_type": item.get("plan_type", "gratis"),
+            "plan_type": item.get("plan_type", "gratuito"),
         }
     )
 
@@ -147,7 +147,7 @@ def register(email: str, password: str, nombre: str) -> dict:
         "email": email,
         "nombre": nombre,
         "password_hash": password_hash,
-        "plan_type": "gratis",
+        "plan_type": "gratuito",
         "downloads": 0,
         "active": True,
         "createdAt": now,
@@ -166,10 +166,16 @@ def register(email: str, password: str, nombre: str) -> dict:
 
     token = create_access_token(
         email=email,
-        user_data={"nombre": nombre, "plan_type": "gratis"},
+        user_data={"nombre": nombre, "plan_type": "gratuito"},
     )
     return _ok(
-        {"token": token, "email": email, "nombre": nombre, "plan_type": "gratis"},
+        {
+            "token": token,
+            "email": email,
+            "nombre": nombre,
+            "plan_type": "gratuito",
+            "createdAt": now,
+        },
         status=201,
     )
 
