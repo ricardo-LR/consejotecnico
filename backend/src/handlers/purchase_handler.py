@@ -137,8 +137,11 @@ def create_purchase(
     document is free and no MercadoPago preference is created.
     """
     # 1. Input validation
-    if not email or not planeacion_id or not plan_type:
-        return _err("Se requieren: email, planeacion_id y plan_type.", 400)
+    is_subscription = plan_type in ("grado", "pro")
+    if not email or not plan_type:
+        return _err("Se requieren: email y plan_type.", 400)
+    if not is_subscription and not planeacion_id:
+        return _err("Se requiere planeacion_id para compras individuales.", 400)
 
     tier = get_tier(plan_type)
     if tier is None:
@@ -153,32 +156,27 @@ def create_purchase(
     if not user:
         return _err("Usuario no encontrado.", 404)
 
-    # 3. Access check (block repurchase of unlimited plans)
-    user_plan = {
-        "plan_type": user.get("plan_type", "gratis"),
-        "downloads": user.get("downloads", 0),
-        "grado": user.get("grado"),
-        "active": user.get("active", True),
-    }
-    allowed, _ = validate_access(user_plan, planeacion_grado=grado or "")
-    if allowed and tier.get("planeaciones") == -1:
-        return _err(
-            "Ya tienes acceso ilimitado con tu plan actual. No es necesario comprar.",
-            409,
-        )
+    # 3. Access check (block repurchase of unlimited subscription plans)
+    if is_subscription:
+        current_plan = user.get("plan_type", "gratuito")
+        if current_plan == plan_type:
+            return _err(
+                "Ya tienes este plan activo. No es necesario comprarlo de nuevo.",
+                409,
+            )
 
     # 4. Resolve price
     # For individual plans: use the stored price from the planeacion record.
-    # For bundle/subscription plans: use the fixed tier price.
+    # For subscription plans (grado/pro): use the fixed tier price.
     planeacion = None
     if plan_type == "individual":
         try:
             planeacion = _get_planeacion(planeacion_id)
         except ClientError:
-            return _err("Error al consultar la planeación.", 500)
+            return _err("Error al consultar la planeacion.", 500)
 
         if not planeacion:
-            return _err(f"Planeación '{planeacion_id}' no encontrada.", 404)
+            return _err(f"Planeacion '{planeacion_id}' no encontrada.", 404)
 
         price = float(planeacion.get("price", 0))
     else:

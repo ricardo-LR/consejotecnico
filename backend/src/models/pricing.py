@@ -8,59 +8,37 @@ Prices in MXN.
 # ──────────────────────────────────────────────
 
 PRICING_TIERS = {
-    # ── Subscription / bundle plans ──────────────────────────────────────────
-    "gratis": {
-        "price": 0,
-        "planeaciones": 5,          # max downloads on free tier
-        "days": 14,                  # trial window in days
-        "label": "Gratis",
-        "description": "5 planeaciones gratuitas durante 14 días",
-    },
+    # ── Per-document purchase (price stored on the planeacion record) ─────────
     "individual": {
         "price_min": 0,
         "price_max": 150,
-        "planeaciones": 1,           # one plan per purchase
+        "planeaciones": 1,
         "label": "Individual",
-        "description": "Una planeación individual (precio según completitud, $0–$150 MXN)",
-        "variable_price": True,      # price stored on the planeacion record
+        "description": "Una planeacion individual ($0-$150 MXN segun completitud)",
+        "variable_price": True,
     },
-    "pack_5": {
-        "price": 300,
-        "planeaciones": 5,
-        "label": "Pack 5",
-        "description": "5 planeaciones a precio especial",
-    },
-    "anual_grado": {
-        "price": 999,
-        "planeaciones": -1,          # -1 = unlimited
-        "days": 365,
-        "grado_restricted": True,    # limited to a single grade level
-        "label": "Anual por Grado",
-        "description": "Acceso ilimitado a un grado específico durante 1 año",
-    },
-    "anual_total": {
-        "price": 1499,
-        "planeaciones": -1,          # -1 = unlimited
-        "days": 365,
-        "grado_restricted": False,   # all grade levels
-        "label": "Anual Total",
-        "description": "Acceso ilimitado a todos los grados durante 1 año",
-    },
-    # ── Account-level plans (new) ─────────────────────────────────────────────
-    "basico": {
+    # ── Subscription plans ────────────────────────────────────────────────────
+    "gratuito": {
         "price": 0,
-        "planeaciones": -1,          # unlimited, but only free docs
-        "price_filter": 0,           # can only access docs with price == 0
-        "label": "Cuenta Básica",
-        "description": "Acceso gratuito a todas las planeaciones GRATIS",
+        "planeaciones": -1,          # unlimited (free docs only)
+        "label": "Gratuito",
+        "description": "Cuenta gratuita — compra documentos individuales",
     },
     "grado": {
         "price": 499,
-        "planeaciones": -1,          # unlimited within the locked grade
+        "planeaciones": -1,          # unlimited within locked grade
         "days": 365,
         "grado_restricted": True,
-        "label": "Cuenta Grado",
-        "description": "Acceso ilimitado a todas las planeaciones de un grado durante 1 año",
+        "label": "Plan Grado",
+        "description": "Todos los documentos de tu grado por 365 dias",
+    },
+    "pro": {
+        "price": 999,
+        "planeaciones": -1,          # unlimited, all grades
+        "days": 365,
+        "grado_restricted": False,
+        "label": "Plan Pro",
+        "description": "Todos los documentos de todos los grados por 365 dias",
     },
 }
 
@@ -127,7 +105,10 @@ def validate_access(user_plan: dict, planeacion_grado: str) -> tuple[bool, str]:
     if not user_plan.get("active", False):
         return False, "Tu plan no está activo o ha expirado."
 
-    plan_type = user_plan.get("plan_type", "gratis")
+    plan_type = user_plan.get("plan_type", "gratuito")
+    # backwards-compat: old "gratis" key maps to "gratuito"
+    if plan_type == "gratis":
+        plan_type = "gratuito"
     tier = get_tier(plan_type)
     if tier is None:
         return False, "Plan desconocido."
