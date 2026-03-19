@@ -26,6 +26,7 @@ from src.config.settings import (
     AWS_REGION,
     DYNAMODB_TABLE_USERS,
     DYNAMODB_TABLE_PURCHASES,
+    DYNAMODB_TABLE_PLANEACIONES,
     MP_ACCESS_TOKEN,
     MP_SUCCESS_URL,
     MP_FAILURE_URL,
@@ -68,6 +69,12 @@ def _get_resource():
 def _get_user(email: str) -> dict | None:
     table = _get_resource().Table(DYNAMODB_TABLE_USERS)
     resp = table.get_item(Key={"email": email})
+    return resp.get("Item")
+
+
+def _get_planeacion(planeacion_id: str) -> dict | None:
+    table = _get_resource().Table(DYNAMODB_TABLE_PLANEACIONES)
+    resp = table.get_item(Key={"planeacionId": planeacion_id})
     return resp.get("Item")
 
 
@@ -122,8 +129,12 @@ def create_purchase(
     completeness_score: float = 1.0,
 ) -> dict:
     """
-    Validate access, calculate price, create a MercadoPago preference,
-    persist a pending purchase record, and return the checkout URL.
+    Validate access, resolve price, create a MercadoPago preference (or grant
+    a free download), persist a purchase record, and return the result.
+
+    For plan_type='individual' the price is read from the planeacion record
+    stored in DynamoDB (set at content-creation time).  If that price is 0 the
+    document is free and no MercadoPago preference is created.
     """
     # 1. Input validation
     if not email or not planeacion_id or not plan_type:
@@ -156,20 +167,71 @@ def create_purchase(
             409,
         )
 
-    # 4. Calculate price
-    price = calculate_price(plan_type, completeness_score)
+    # 4. Resolve price
+    # For individual plans: use the stored price from the planeacion record.
+    # For bundle/subscription plans: use the fixed tier price.
+    planeacion = None
+    if plan_type == "individual":
+        try:
+            planeacion = _get_planeacion(planeacion_id)
+        except ClientError:
+            return _err("Error al consultar la planeación.", 500)
+
+        if not planeacion:
+            return _err(f"Planeación '{planeacion_id}' no encontrada.", 404)
+
+        price = float(planeacion.get("price", 0))
+    else:
+        price = calculate_price(plan_type, completeness_score)
+
+    # 5. Free document — grant access directly without MercadoPago
+    if price == 0 and plan_type == "individual":
+        purchase_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        purchase_item = {
+            "purchaseId":   purchase_id,
+            "email":        email,
+            "planeacionId": planeacion_id,
+            "planType":     plan_type,
+            "price":        "0",
+            "currency":     "MXN",
+            "status":       "COMPLETED",
+            "statusReason": "free_document",
+            "createdAt":    now,
+            "updatedAt":    now,
+        }
+        try:
+            _save_purchase(purchase_item)
+        except ClientError:
+            pass
+
+        return _ok({
+            "purchase_id":   purchase_id,
+            "status":        "COMPLETED",
+            "price":         0,
+            "currency":      "MXN",
+            "plan_type":     plan_type,
+            "download_ready": True,
+            "planeacion_id": planeacion_id,
+        }, status=200)
+
+    # For non-individual plans with price == 0 this is a misconfiguration
     if price == 0:
         return _err("El plan gratuito no requiere pago.", 400)
 
-    # 5. Build MercadoPago preference
+    # 6. Build MercadoPago preference
     purchase_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
+    item_title = (
+        planeacion.get("titulo", tier["label"]) if planeacion
+        else tier["label"]
+    )
     preference_data = {
         "items": [
             {
                 "id": planeacion_id,
-                "title": f"CONSEJOTECNICO - {tier['label']}",
+                "title": f"CONSEJOTECNICO - {item_title}"[:255],
                 "description": tier["description"],
                 "quantity": 1,
                 "currency_id": "MXN",

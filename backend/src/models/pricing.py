@@ -8,6 +8,7 @@ Prices in MXN.
 # ──────────────────────────────────────────────
 
 PRICING_TIERS = {
+    # ── Subscription / bundle plans ──────────────────────────────────────────
     "gratis": {
         "price": 0,
         "planeaciones": 5,          # max downloads on free tier
@@ -16,12 +17,12 @@ PRICING_TIERS = {
         "description": "5 planeaciones gratuitas durante 14 días",
     },
     "individual": {
-        "price_min": 25,
-        "price_max": 100,
+        "price_min": 0,
+        "price_max": 150,
         "planeaciones": 1,           # one plan per purchase
         "label": "Individual",
-        "description": "Una planeación individual (precio varía según completitud)",
-        "variable_price": True,      # price depends on completeness score
+        "description": "Una planeación individual (precio según completitud, $0–$150 MXN)",
+        "variable_price": True,      # price stored on the planeacion record
     },
     "pack_5": {
         "price": 300,
@@ -45,6 +46,22 @@ PRICING_TIERS = {
         "label": "Anual Total",
         "description": "Acceso ilimitado a todos los grados durante 1 año",
     },
+    # ── Account-level plans (new) ─────────────────────────────────────────────
+    "basico": {
+        "price": 0,
+        "planeaciones": -1,          # unlimited, but only free docs
+        "price_filter": 0,           # can only access docs with price == 0
+        "label": "Cuenta Básica",
+        "description": "Acceso gratuito a todas las planeaciones GRATIS",
+    },
+    "grado": {
+        "price": 499,
+        "planeaciones": -1,          # unlimited within the locked grade
+        "days": 365,
+        "grado_restricted": True,
+        "label": "Cuenta Grado",
+        "description": "Acceso ilimitado a todas las planeaciones de un grado durante 1 año",
+    },
 }
 
 # ──────────────────────────────────────────────
@@ -56,27 +73,41 @@ def get_tier(plan_type: str) -> dict | None:
     return PRICING_TIERS.get(plan_type)
 
 
+def calculate_individual_price(completeness_score: float) -> int:
+    """
+    Calculate the price of a single planeacion based on its completeness.
+
+    completeness_score: 0.0 – 1.0
+      formula : int(completeness_score * 150)
+      minimum : $25 MXN
+      maximum : $150 MXN
+
+    Examples:
+      0.17  → $25  (minimum floor)
+      0.50  → $75
+      0.75  → $112
+      0.90  → $135
+      1.00  → $150
+    """
+    min_price = 25
+    max_price = 150
+    price = int(max(0.0, min(1.0, completeness_score)) * max_price)
+    return max(min_price, price)
+
+
 def calculate_price(plan_type: str, completeness_score: float = 1.0) -> float:
     """
     Return the price in MXN for the given plan.
 
-    For 'individual' plans the price scales linearly with completeness_score
-    (0.0–1.0):
-        - score < 0.5  → $25 MXN
-        - score = 1.0  → $100 MXN
-        - otherwise    → linear interpolation between $25 and $100
+    For 'individual' plans the price is calculated by calculate_individual_price().
+    For all other plans the price is fixed (from PRICING_TIERS).
     """
     tier = get_tier(plan_type)
     if tier is None:
         raise ValueError(f"Plan desconocido: {plan_type}")
 
     if plan_type == "individual":
-        score = max(0.0, min(1.0, completeness_score))
-        if score < 0.5:
-            return 25.0
-        # linear interpolation: score 0.5 → $25, score 1.0 → $100
-        price = 25.0 + (score - 0.5) * (100.0 - 25.0) / 0.5
-        return round(price, 2)
+        return float(calculate_individual_price(completeness_score))
 
     return float(tier.get("price", 0))
 
@@ -88,7 +119,7 @@ def validate_access(user_plan: dict, planeacion_grado: str) -> tuple[bool, str]:
     user_plan expected keys:
         plan_type   : str  – one of PRICING_TIERS keys
         downloads   : int  – total downloads already made
-        grado       : str  – grade level locked for anual_grado (or None)
+        grado       : str  – grade level locked for anual_grado/grado (or None)
         active      : bool – whether the subscription is still active
 
     Returns (allowed: bool, reason: str).
@@ -110,7 +141,7 @@ def validate_access(user_plan: dict, planeacion_grado: str) -> tuple[bool, str]:
             if allowed_grado and planeacion_grado != allowed_grado:
                 return (
                     False,
-                    f"Tu plan anual solo permite descargas del grado {allowed_grado}.",
+                    f"Tu plan solo permite descargas del grado {allowed_grado}.",
                 )
         return True, "Acceso concedido."
 

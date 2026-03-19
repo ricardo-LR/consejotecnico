@@ -64,24 +64,26 @@ export default function PlaneacionCard({ planeacion }: PlaneacionCardProps) {
 
         {/* Price + CTA */}
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-          <span className="text-lg font-bold text-gray-900">
-            {price === 0 ? 'Gratis' : `$${price.toFixed(2)}`}
+          <span className={`text-lg font-bold ${price === 0 ? 'text-green-600' : 'text-gray-900'}`}>
+            {price === 0 ? 'GRATIS' : `$${price} pesos`}
           </span>
           <Link
             href={
               isPurchased
                 ? `/catalog/${id}`
                 : price === 0
-                ? `/catalog/${id}`
+                ? `/checkout?planeacion_id=${id}&plan_type=individual`
                 : `/checkout?planeacion_id=${id}&plan_type=individual`
             }
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               isPurchased
                 ? 'bg-green-600 text-white hover:bg-green-700'
+                : price === 0
+                ? 'bg-green-600 text-white hover:bg-green-700'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {isPurchased ? 'Ver descarga' : price === 0 ? 'Ver detalles' : 'Comprar'}
+            {isPurchased ? 'Ver descarga' : price === 0 ? 'Descargar' : 'Comprar'}
           </Link>
         </div>
       </div>
