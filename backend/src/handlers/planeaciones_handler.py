@@ -27,10 +27,18 @@ def _get_table():
     return _dynamodb.Table(DYNAMODB_TABLE_PLANEACIONES)
 
 
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "GET,OPTIONS",
+}
+
+
 def _ok(body: dict, status: int = 200) -> dict:
     return {
         "statusCode": status,
-        "headers": {"Content-Type": "application/json"},
+        "headers": CORS_HEADERS,
         "body": json.dumps(body, ensure_ascii=False, default=str),
     }
 
@@ -38,7 +46,7 @@ def _ok(body: dict, status: int = 200) -> dict:
 def _err(message: str, status: int = 400) -> dict:
     return {
         "statusCode": status,
-        "headers": {"Content-Type": "application/json"},
+        "headers": CORS_HEADERS,
         "body": json.dumps({"error": message}, ensure_ascii=False),
     }
 
