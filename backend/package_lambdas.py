@@ -5,7 +5,7 @@ src_dir = os.path.join('backend', 'src')
 build_dir = os.path.join('backend', 'build')
 os.makedirs(build_dir, exist_ok=True)
 
-handlers = ['auth_handler', 'planeaciones_handler', 'pricing_handler', 'purchase_handler']
+handlers = ['auth_handler', 'planeaciones_handler', 'pricing_handler', 'purchase_handler', 'webhook_handler']
 
 for handler in handlers:
     zip_path = os.path.join(build_dir, handler + '.zip')

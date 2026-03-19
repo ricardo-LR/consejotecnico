@@ -1,0 +1,113 @@
+========================================================
+  TARJETAS DE PRUEBA - MERCADOPAGO SANDBOX (Mexico MXN)
+========================================================
+
+IMPORTANTE: Estas tarjetas SOLO funcionan en modo Sandbox.
+Usar Access Token: TEST-1131345150650884-...
+
+Para probar, usa el pago de sandbox en:
+  https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=<PREFERENCE_ID>
+
+Datos comunes para TODAS las tarjetas:
+  - Fecha de vencimiento: cualquier fecha futura (ej. 12/30)
+  - CVV: cualquier 3 digitos (ej. 123)
+  - Titular: cualquier nombre (ej. APRO o CONT segun el resultado deseado)
+  - DNI/CURP: 12345678
+
+========================================================
+  VISA - CREDITO
+========================================================
+
+Numero: 4009 1753 3280 6176
+Resultado: APROBADO (approved)
+
+Numero: 4013 5406 8274 6260
+Resultado: RECHAZADO - fondos insuficientes (cc_rejected_insufficient_amount)
+
+Numero: 4170 0688 1010 8020
+Resultado: RECHAZADO - tarjeta en lista negra (cc_rejected_blacklist)
+
+========================================================
+  MASTERCARD - CREDITO
+========================================================
+
+Numero: 5031 7557 3453 0604
+Resultado: APROBADO (approved)
+
+Numero: 5031 7557 3453 0604  [titular: CONT]
+Resultado: PENDIENTE - en proceso (pending_contingency)
+
+Numero: 5031 7557 3453 0604  [titular: CALL]
+Resultado: RECHAZADO - llamar al banco (cc_rejected_call_for_authorize)
+
+========================================================
+  AMERICAN EXPRESS - CREDITO
+========================================================
+
+Numero: 3711 8030 3257 522
+CVV: 1234 (4 digitos para AMEX)
+Resultado: APROBADO (approved)
+
+========================================================
+  DEBITO VISA (Mexico)
+========================================================
+
+Numero: 4009 1753 3280 6176
+Resultado: APROBADO (approved)
+
+========================================================
+  OXXO PAY (efectivo)
+========================================================
+
+No requiere tarjeta.
+El payer recibe un codigo de barras para pagar en OXXO.
+Status inicial: pending
+Status final:   approved (simulado automaticamente en sandbox)
+
+========================================================
+  RESULTADOS POSIBLES (status en DynamoDB)
+========================================================
+
+  approved        -> COMPLETED  (pago exitoso)
+  pending         -> PENDING    (en proceso, ej. OXXO pendiente)
+  in_process      -> PENDING    (revision antifraude)
+  rejected        -> FAILED     (rechazado)
+  cancelled       -> CANCELLED  (cancelado por usuario o expiracion)
+  refunded        -> REFUNDED   (devolucion procesada)
+
+========================================================
+  COMO FORZAR UN RESULTADO ESPECIFICO
+========================================================
+
+En el campo "name" (titular de la tarjeta) usa:
+  APRO  -> Pago aprobado
+  OTHE  -> Rechazado por error general
+  CONT  -> Pendiente por contingencia
+  CALL  -> Rechazado, llamar a banco
+  FUND  -> Fondos insuficientes
+  SECU  -> CVV incorrecto
+  EXPI  -> Fecha de vencimiento incorrecta
+  FORM  -> Error en formulario
+
+========================================================
+  USUARIO DE PRUEBA COMPRADOR (para loguear en MP)
+========================================================
+
+Email:    test_user_92476657@testuser.com
+Password: qatest3287
+
+========================================================
+  LINKS UTILES SANDBOX
+========================================================
+
+Dashboard MP Sandbox: https://www.mercadopago.com.mx/developers/panel
+Notificaciones:       https://www.mercadopago.com.mx/developers/panel/notifications
+API Payments:         https://api.mercadopago.com/v1/payments/<PAYMENT_ID>?access_token=<TOKEN>
+
+Para consultar un pago en sandbox:
+  curl "https://api.mercadopago.com/v1/payments/<ID>?access_token=TEST-113134..."
+
+Para listar pagos recientes:
+  curl "https://api.mercadopago.com/v1/payment/search?access_token=TEST-113134..."
+
+========================================================
