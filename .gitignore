@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Lambda build artifacts
+backend/build/
+backend/lambda_layer/
+backend/lambda_layer.zip
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
