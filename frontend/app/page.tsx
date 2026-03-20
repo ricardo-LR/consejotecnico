@@ -1,6 +1,4 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 const features = [
   {
@@ -82,8 +80,6 @@ const pricingPlans = [
 ];
 
 export default function HomePage() {
-  const router = useRouter();
-
   return (
     <>
       {/* Hero */}
@@ -96,18 +92,18 @@ export default function HomePage() {
             Ahorra tiempo y mejora tus clases con planeaciones profesionales listas para usar. Organizadas por grado y asignatura.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => router.push('/catalog')}
+            <Link
+              href="/catalog"
               className="bg-white text-blue-700 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-blue-50 transition-colors"
             >
               Ver catálogo
-            </button>
-            <button
-              onClick={() => router.push('/auth/register')}
+            </Link>
+            <Link
+              href="/auth/register"
               className="border-2 border-white text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/10 transition-colors"
             >
               Crear cuenta gratis
-            </button>
+            </Link>
           </div>
         </div>
       </section>
@@ -175,16 +171,16 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <button
-                  onClick={() => router.push(plan.href)}
-                  className={`w-full py-3 rounded-lg font-semibold text-sm transition-colors ${
+                <Link
+                  href={plan.href}
+                  className={`w-full text-center py-3 rounded-lg font-semibold text-sm transition-colors ${
                     plan.popular
                       ? 'bg-white text-blue-600 hover:bg-blue-50'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
                   {plan.cta}
-                </button>
+                </Link>
               </div>
             ))}
           </div>
@@ -198,12 +194,12 @@ export default function HomePage() {
           <p className="text-gray-400 text-lg mb-8">
             Únete a miles de docentes que ya usan CONSEJOTECNICO para planear sus clases.
           </p>
-          <button
-            onClick={() => router.push('/auth/register')}
-            className="bg-blue-600 text-white px-10 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors"
+          <Link
+            href="/auth/register"
+            className="inline-block bg-blue-600 text-white px-10 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors"
           >
             Crear cuenta gratis
-          </button>
+          </Link>
         </div>
       </section>
     </>
