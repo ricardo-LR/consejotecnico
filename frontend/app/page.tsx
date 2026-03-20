@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 const features = [
   {
     icon: (
@@ -92,18 +90,18 @@ export default function HomePage() {
             Ahorra tiempo y mejora tus clases con planeaciones profesionales listas para usar. Organizadas por grado y asignatura.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
+            <a
               href="/catalog"
               className="bg-white text-blue-700 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-blue-50 transition-colors"
             >
               Ver catálogo
-            </Link>
-            <Link
+            </a>
+            <a
               href="/auth/register"
               className="border-2 border-white text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/10 transition-colors"
             >
               Crear cuenta gratis
-            </Link>
+            </a>
           </div>
         </div>
       </section>
@@ -171,7 +169,7 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <Link
+                <a
                   href={plan.href}
                   className={`w-full text-center py-3 rounded-lg font-semibold text-sm transition-colors ${
                     plan.popular
@@ -180,7 +178,7 @@ export default function HomePage() {
                   }`}
                 >
                   {plan.cta}
-                </Link>
+                </a>
               </div>
             ))}
           </div>
@@ -194,12 +192,12 @@ export default function HomePage() {
           <p className="text-gray-400 text-lg mb-8">
             Únete a miles de docentes que ya usan CONSEJOTECNICO para planear sus clases.
           </p>
-          <Link
+          <a
             href="/auth/register"
             className="inline-block bg-blue-600 text-white px-10 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors"
           >
             Crear cuenta gratis
-          </Link>
+          </a>
         </div>
       </section>
     </>
