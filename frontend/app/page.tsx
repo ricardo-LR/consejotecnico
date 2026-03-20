@@ -1,4 +1,6 @@
-import Link from 'next/link';
+'use client';
+
+import { useRouter } from 'next/navigation';
 
 const features = [
   {
@@ -33,15 +35,55 @@ const features = [
   },
 ];
 
-const tiers = [
-  { name: 'Básico', price: 0, features: ['5 planeaciones gratuitas', 'Acceso al catálogo', 'Soporte por email'], cta: 'Empezar gratis', href: '/auth/register', highlight: false },
-  { name: 'Starter', price: 99, features: ['20 descargas/mes', 'Todas las asignaturas', 'Soporte prioritario'], cta: 'Suscribirse', href: '/auth/register', highlight: false },
-  { name: 'Pro', price: 199, features: ['Descargas ilimitadas', 'Acceso anticipado', 'Soporte 24/7'], cta: 'Suscribirse', href: '/auth/register', highlight: true },
-  { name: 'Escuela', price: 499, features: ['Hasta 10 docentes', 'Dashboard de escuela', 'Facturación'], cta: 'Contactar', href: '/auth/register', highlight: false },
-  { name: 'Distrito', price: 999, features: ['Docentes ilimitados', 'Gestión centralizada', 'SLA garantizado'], cta: 'Contactar', href: '/auth/register', highlight: false },
+const pricingPlans = [
+  {
+    name: 'Gratuito',
+    price: '$0',
+    subtitle: '',
+    description: 'Crea tu cuenta gratis. Paga por cada documento que quieras descargar',
+    features: [
+      'Acceso al catálogo completo',
+      'Compra documentos individuales ($0–$150)',
+      'Paga solo lo que necesites',
+    ],
+    cta: 'Crear cuenta gratis',
+    href: '/auth/register',
+    popular: false,
+  },
+  {
+    name: 'Grado',
+    price: '$499',
+    subtitle: '/año',
+    description: 'Acceso a TODO el contenido del grado que elijas',
+    features: [
+      'Todos los documentos de tu grado',
+      'Sin límite de descargas',
+      'Por 365 días',
+    ],
+    cta: 'Suscribirse',
+    href: '/checkout?plan=grado',
+    popular: false,
+  },
+  {
+    name: 'Pro',
+    price: '$999',
+    subtitle: '/año',
+    description: 'Acceso a TODO el contenido de TODOS los grados',
+    features: [
+      'Todos los documentos',
+      'Todos los grados',
+      'Sin límite de descargas',
+      'Por 365 días',
+    ],
+    cta: 'Suscribirse',
+    href: '/checkout?plan=pro',
+    popular: true,
+  },
 ];
 
 export default function HomePage() {
+  const router = useRouter();
+
   return (
     <>
       {/* Hero */}
@@ -54,18 +96,18 @@ export default function HomePage() {
             Ahorra tiempo y mejora tus clases con planeaciones profesionales listas para usar. Organizadas por grado y asignatura.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/catalog"
+            <button
+              onClick={() => router.push('/catalog')}
               className="bg-white text-blue-700 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-blue-50 transition-colors"
             >
               Ver catálogo
-            </Link>
-            <Link
-              href="/auth/register"
+            </button>
+            <button
+              onClick={() => router.push('/auth/register')}
               className="border-2 border-white text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/10 transition-colors"
             >
               Crear cuenta gratis
-            </Link>
+            </button>
           </div>
         </div>
       </section>
@@ -91,53 +133,58 @@ export default function HomePage() {
 
       {/* Pricing */}
       <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Planes y precios</h2>
             <p className="text-gray-500 max-w-xl mx-auto">Elige el plan que mejor se adapte a tus necesidades.</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-            {tiers.map((tier) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {pricingPlans.map((plan) => (
               <div
-                key={tier.name}
-                className={`rounded-2xl p-6 border flex flex-col ${
-                  tier.highlight
+                key={plan.name}
+                className={`rounded-2xl p-6 border flex flex-col relative ${
+                  plan.popular
                     ? 'bg-blue-600 text-white border-blue-600 shadow-xl scale-105'
                     : 'bg-white text-gray-900 border-gray-200'
                 }`}
               >
-                {tier.highlight && (
-                  <span className="text-xs font-semibold bg-white/20 text-white px-2 py-1 rounded-full self-start mb-3">
-                    Más popular
+                {plan.popular && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-semibold bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full whitespace-nowrap">
+                    Mas popular
                   </span>
                 )}
-                <h3 className={`text-lg font-bold mb-1 ${tier.highlight ? 'text-white' : 'text-gray-900'}`}>
-                  {tier.name}
+                <h3 className={`text-lg font-bold mb-1 ${plan.popular ? 'text-white' : 'text-gray-900'}`}>
+                  {plan.name}
                 </h3>
-                <p className={`text-3xl font-bold mb-5 ${tier.highlight ? 'text-white' : 'text-gray-900'}`}>
-                  {tier.price === 0 ? 'Gratis' : `$${tier.price}`}
-                  {tier.price > 0 && <span className="text-sm font-normal opacity-70">/mes</span>}
+                <p className={`text-3xl font-bold mb-1 ${plan.popular ? 'text-white' : 'text-gray-900'}`}>
+                  {plan.price}
+                  {plan.subtitle && (
+                    <span className="text-sm font-normal opacity-70">{plan.subtitle}</span>
+                  )}
+                </p>
+                <p className={`text-sm mb-5 ${plan.popular ? 'text-blue-100' : 'text-gray-500'}`}>
+                  {plan.description}
                 </p>
                 <ul className="space-y-2 flex-1 mb-6">
-                  {tier.features.map((feat) => (
-                    <li key={feat} className={`text-sm flex items-center gap-2 ${tier.highlight ? 'text-blue-100' : 'text-gray-600'}`}>
-                      <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                  {plan.features.map((feat) => (
+                    <li key={feat} className={`text-sm flex items-start gap-2 ${plan.popular ? 'text-blue-100' : 'text-gray-600'}`}>
+                      <svg className="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
                       {feat}
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href={tier.href}
-                  className={`w-full text-center py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-                    tier.highlight
+                <button
+                  onClick={() => router.push(plan.href)}
+                  className={`w-full py-3 rounded-lg font-semibold text-sm transition-colors ${
+                    plan.popular
                       ? 'bg-white text-blue-600 hover:bg-blue-50'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
-                  {tier.cta}
-                </Link>
+                  {plan.cta}
+                </button>
               </div>
             ))}
           </div>
@@ -151,12 +198,12 @@ export default function HomePage() {
           <p className="text-gray-400 text-lg mb-8">
             Únete a miles de docentes que ya usan CONSEJOTECNICO para planear sus clases.
           </p>
-          <Link
-            href="/auth/register"
-            className="inline-block bg-blue-600 text-white px-10 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors"
+          <button
+            onClick={() => router.push('/auth/register')}
+            className="bg-blue-600 text-white px-10 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 transition-colors"
           >
             Crear cuenta gratis
-          </Link>
+          </button>
         </div>
       </section>
     </>
