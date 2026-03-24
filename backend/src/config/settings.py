@@ -9,6 +9,13 @@ DYNAMODB_TABLE_USERS = 'consejotecnico-users'
 DYNAMODB_TABLE_PLANEACIONES = 'consejotecnico-planeaciones'
 DYNAMODB_TABLE_PURCHASES = 'consejotecnico-purchases'
 
+# Maestro Workspace tables
+DYNAMODB_TABLE_GRUPOS = 'consejotecnico-grupos'
+DYNAMODB_TABLE_ALUMNOS = 'consejotecnico-alumnos'
+DYNAMODB_TABLE_EVALUACIONES = 'consejotecnico-evaluaciones'
+DYNAMODB_TABLE_CALIFICACIONES = 'consejotecnico-calificaciones'
+DYNAMODB_TABLE_DIARIO = 'consejotecnico-diario'
+
 # Security
 JWT_SECRET = os.getenv('JWT_SECRET', 'dev-secret-key')
 JWT_ALGORITHM = 'HS256'
@@ -19,7 +26,11 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 ENVIRONMENT = os.getenv('ENVIRONMENT', 'dev')
 
 # MercadoPago
-MP_ACCESS_TOKEN = os.getenv('MERCADOPAGO_SANDBOX_ACCESS_TOKEN', '')
+MP_ACCESS_TOKEN = (
+    os.getenv('MERCADOPAGO_SANDBOX_ACCESS_TOKEN') or
+    os.getenv('MERCADOPAGO_ACCESS_TOKEN') or
+    ''
+)
 MP_PUBLIC_KEY = os.getenv('MERCADOPAGO_SANDBOX_PUBLIC_KEY', '')
 MP_WEBHOOK_SECRET = os.getenv('MERCADOPAGO_WEBHOOK_SECRET', '')
 MP_SANDBOX_MODE = os.getenv('MERCADOPAGO_SANDBOX_MODE', 'True') == 'True'
