@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { isLoggedIn, getUser, getPlanType } from '@/lib/auth';
+import { isLoggedIn, getPlanType } from '@/lib/auth';
 
 interface PremiumFeatureProps {
   children: React.ReactNode;
@@ -15,56 +15,57 @@ export default function PremiumFeature({
   feature,
   requiredPlan = 'grado',
 }: PremiumFeatureProps) {
-  const [mounted, setMounted]         = useState(false);
+  const [checked, setChecked]         = useState(false);
   const [loggedIn, setLoggedIn]       = useState(false);
-  const [currentPlan, setCurrentPlan] = useState('gratuito');
+  const [planType, setPlanType]       = useState('');
 
   useEffect(() => {
     console.log('[PREMIUM] ════════════════════════════════════════');
-    console.log('[PREMIUM] Feature:', feature);
-    console.log('[PREMIUM] Required Plan:', requiredPlan);
+    console.log('[PREMIUM] Feature:', feature, '| Required:', requiredPlan);
 
     const token    = localStorage.getItem('token');
     const logged   = isLoggedIn();
-    const userData = getUser();
-    const planType = getPlanType();
+    const plan     = getPlanType() || '';
 
-    console.log('[PREMIUM] localStorage.token:', token    ? '✅ SI' : '❌ NO');
-    console.log('[PREMIUM] isLoggedIn():', logged          ? '✅ TRUE' : '❌ FALSE');
-    console.log('[PREMIUM] Usuario:', userData?.email      ?? 'null');
-    console.log('[PREMIUM] Plan Actual:', planType         ?? 'gratuito');
+    console.log('[PREMIUM] localStorage.token:', token  ? `✅ ${token.substring(0, 20)}...` : '❌ NULL');
+    console.log('[PREMIUM] isLoggedIn():', logged        ? '✅ TRUE' : '❌ FALSE');
+    console.log('[PREMIUM] getPlanType():', plan         || '(vacío → gratuito)');
     console.log('[PREMIUM] ════════════════════════════════════════');
 
-    setMounted(true);
     setLoggedIn(logged);
-    setCurrentPlan(planType ?? 'gratuito');
-  }, [feature, requiredPlan]);
+    setPlanType(plan);
+    setChecked(true);
+  }, []); // sin dependencias — solo se ejecuta una vez al montar
 
-  if (!mounted) return null;
+  // Esperar hidratación del cliente antes de renderizar
+  if (!checked) return null;
 
-  // No está logueado
+  // ── No está logueado ────────────────────────────────────────────────────
   if (!loggedIn) {
-    console.log('[PREMIUM] ❌ NO LOGUEADO - mostrar login');
+    console.log('[PREMIUM] ❌ NO LOGUEADO');
     return (
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
         <div className="flex items-start gap-3">
           <span className="text-yellow-500 text-xl shrink-0">⚠️</span>
           <div>
-            <p className="font-semibold text-yellow-800 text-sm mb-3">
-              Debes iniciar sesión para acceder a {feature}
+            <p className="font-semibold text-yellow-800 text-sm mb-1">
+              Inicia sesión para acceder a {feature}
             </p>
-            <div className="flex gap-2">
+            <p className="text-yellow-700 text-xs mb-3">
+              O compra un plan para desbloquear esta función.
+            </p>
+            <div className="flex gap-2 flex-wrap">
               <Link
-                href="/auth/login"
+                href={`/auth/login?redirect=/checkout?plan=${requiredPlan}`}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700"
               >
                 Iniciar Sesión
               </Link>
               <Link
-                href="/auth/register"
+                href={`/checkout?plan=${requiredPlan}`}
                 className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg font-semibold text-sm hover:bg-blue-50"
               >
-                Registrarse
+                Ver Planes
               </Link>
             </div>
           </div>
@@ -73,26 +74,26 @@ export default function PremiumFeature({
     );
   }
 
-  // Verifica si el plan tiene acceso
+  // ── Logueado pero plan insuficiente ──────────────────────────────────────
   const hasAccess =
-    currentPlan === 'pro' ||
-    (requiredPlan === 'grado' && (currentPlan === 'grado' || currentPlan === 'pro'));
+    planType === 'pro' ||
+    (requiredPlan === 'grado' && (planType === 'grado' || planType === 'pro'));
 
   if (!hasAccess) {
-    console.log('[PREMIUM] 🔒 PLAN INSUFICIENTE - mostrar upgrade. Actual:', currentPlan, 'Requerido:', requiredPlan);
+    console.log('[PREMIUM] 🔒 PLAN INSUFICIENTE — actual:', planType || 'gratuito', '| requerido:', requiredPlan);
     return (
       <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg">
         <div className="flex items-start gap-3">
           <span className="text-blue-500 text-xl shrink-0">🔒</span>
           <div>
             <p className="font-semibold text-blue-900 text-sm mb-1">
-              {feature} requiere Plan {requiredPlan === 'grado' ? 'Grado' : 'Pro'}
+              {feature} — Plan {requiredPlan === 'grado' ? 'Grado ($499/año)' : 'Pro ($999/año)'}
             </p>
             <p className="text-blue-700 text-sm mb-3">
-              Tu plan actual es <strong>{currentPlan}</strong>.
-              Necesitas el plan <strong>{requiredPlan}</strong> para acceder.
+              Tu plan actual es <strong>{planType || 'gratuito'}</strong>.
+              Actualiza para desbloquear esta función.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Link
                 href={`/checkout?plan=${requiredPlan}`}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700"
@@ -112,6 +113,6 @@ export default function PremiumFeature({
     );
   }
 
-  console.log('[PREMIUM] ✅ ACCESO PERMITIDO - plan:', currentPlan);
+  console.log('[PREMIUM] ✅ ACCESO PERMITIDO — plan:', planType);
   return <>{children}</>;
 }

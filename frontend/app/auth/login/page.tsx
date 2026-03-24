@@ -68,18 +68,21 @@ function LoginForm() {
       localStorage.setItem('token', data.token);
       console.log('[LOGIN]   ✅ token guardado:', data.token.substring(0, 30) + '...');
 
-      localStorage.setItem('email', data.email ?? email);
-      console.log('[LOGIN]   ✅ email guardado:', data.email ?? email);
+      const userEmail = data.email ?? email;
+      localStorage.setItem('email', userEmail);
+      console.log('[LOGIN]   ✅ email guardado:', userEmail);
 
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        console.log('[LOGIN]   ✅ user guardado:', data.user.email);
-      }
+      // API devuelve email/nombre/plan_type como campos planos (no dentro de data.user)
+      const userObj = {
+        email:     userEmail,
+        nombre:    data.nombre    ?? '',
+        plan_type: data.plan_type ?? 'gratuito',
+      };
+      localStorage.setItem('user', JSON.stringify(userObj));
+      console.log('[LOGIN]   ✅ user guardado:', userObj.email, '| plan:', userObj.plan_type);
 
-      if (data.plan_type) {
-        localStorage.setItem('plan_type', data.plan_type);
-        console.log('[LOGIN]   ✅ plan_type guardado:', data.plan_type);
-      }
+      localStorage.setItem('plan_type', data.plan_type ?? 'gratuito');
+      console.log('[LOGIN]   ✅ plan_type guardado:', data.plan_type ?? 'gratuito');
 
       // Verificación post-guardado
       console.log('[LOGIN] 🔍 Verificando localStorage...');
