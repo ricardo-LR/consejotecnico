@@ -178,13 +178,13 @@ export default function MaestroDashboardPage() {
               href="/checkout?plan=grado"
               className="inline-block bg-white text-blue-600 font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-50 transition-colors text-center"
             >
-              Ver Plan Grado — $199/mes
+              Ver Plan Grado — $499/año
             </Link>
             <Link
               href="/checkout?plan=pro"
               className="inline-block bg-blue-500 text-white font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-blue-400 transition-colors text-center border border-blue-400"
             >
-              Ver Plan Pro — $349/mes
+              Ver Plan Pro — $999/año
             </Link>
           </div>
         </div>
