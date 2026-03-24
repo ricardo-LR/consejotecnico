@@ -4,364 +4,305 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { isLoggedIn, getUser, getAuthToken } from '@/lib/auth';
-
-const GRADOS = [
-  { id: 'preescolar', label: 'Preescolar' },
-  { id: '1',         label: '1° Primaria' },
-  { id: '2',         label: '2° Primaria' },
-  { id: '3',         label: '3° Primaria' },
-  { id: '4',         label: '4° Primaria' },
-  { id: '5',         label: '5° Primaria' },
-  { id: '6',         label: '6° Primaria' },
-];
+import { PLANS } from '@/config/plans';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
-
-const PLAN_OPTIONS = [
-  {
-    key: 'individual',
-    label: 'Comprar documento individual',
-    price: '$0–$150 MXN',
-    desc: 'Solo este documento',
-  },
-  {
-    key: 'grado',
-    label: 'Plan Grado',
-    price: '$499/año',
-    desc: 'Todos los documentos de tu grado por 365 días',
-  },
-  {
-    key: 'pro',
-    label: 'Plan Pro',
-    price: '$999/año',
-    desc: 'Todos los documentos de todos los grados por 365 días',
-  },
-] as const;
-
-type PlanKey = typeof PLAN_OPTIONS[number]['key'];
-
-const SUBSCRIPTION_INFO: Record<string, { name: string; price: string; features: string[] }> = {
-  grado: {
-    name: 'Plan Grado',
-    price: '$499 MXN/año',
-    features: [
-      'Todos los documentos de tu grado',
-      'Sin límite de descargas',
-      'Acceso por 365 días',
-    ],
-  },
-  pro: {
-    name: 'Plan Pro',
-    price: '$999 MXN/año',
-    features: [
-      'Todos los documentos de todos los grados',
-      'Sin límite de descargas',
-      'Acceso por 365 días',
-    ],
-  },
-};
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const subscriptionPlan = searchParams.get('plan') ?? '';
-  const planeacionId     = searchParams.get('planeacion_id') ?? '';
+  const planId = searchParams.get('plan') || 'grado';
 
-  const defaultPlan: PlanKey = (searchParams.get('plan_type') as PlanKey) ?? 'individual';
-  const [planType, setPlanType]       = useState<PlanKey>(defaultPlan);
-  const [selectedGrado, setSelectedGrado] = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState('');
-  const [mounted, setMounted]         = useState(false);
-  const [userLoggedIn, setUserLoggedIn] = useState(false);
-  const [userEmail, setUserEmail]     = useState('');
+  const [loggedIn, setLoggedIn]               = useState(false);
+  const [user, setUser]                       = useState<{ email: string; nombre?: string; plan_type?: string } | null>(null);
+  const [loading, setLoading]                 = useState(true);
+  const [error, setError]                     = useState('');
+  const [selectedPlan, setSelectedPlan]       = useState('');
+  const [selectedSuboption, setSelectedSuboption] = useState('');
+  const [processing, setProcessing]           = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const loggedIn = isLoggedIn();
-    setUserLoggedIn(loggedIn);
+    console.log('[CHECKOUT] ════════════════════════════════════════');
+    console.log('[CHECKOUT] Iniciando checkout...');
+    console.log('[CHECKOUT] ════════════════════════════════════════');
+    console.log('[CHECKOUT] Plan seleccionado:', planId);
 
-    if (loggedIn) {
-      const u = getUser();
-      setUserEmail(u?.email ?? '');
-    } else {
-      // Redirect to login, preserving the intended destination
-      const dest = subscriptionPlan
-        ? `/checkout?plan=${subscriptionPlan}`
-        : planeacionId
-        ? `/checkout?planeacion_id=${planeacionId}&plan_type=${defaultPlan}`
-        : '/checkout';
-      router.push(`/auth/login?redirect=${encodeURIComponent(dest)}`);
+    // VERIFICACIÓN CRÍTICA: Revisar sesión
+    const token    = localStorage.getItem('token');
+    const userStr  = localStorage.getItem('user');
+    const planType = localStorage.getItem('plan_type');
+
+    console.log('[CHECKOUT] localStorage.token:', token   ? '✅ SI' : '❌ NO');
+    console.log('[CHECKOUT] localStorage.user:', userStr  ? '✅ SI' : '❌ NO');
+    console.log('[CHECKOUT] localStorage.plan_type:', planType ? `✅ ${planType}` : '❌ NO');
+
+    const logged = isLoggedIn();
+    console.log('[CHECKOUT] isLoggedIn():', logged ? '✅ SI' : '❌ NO');
+
+    if (!logged) {
+      console.log('[CHECKOUT] ❌ No hay sesión - Redirigiendo a login');
+      setError('Debes iniciar sesión para comprar');
+      setLoading(false);
+      setTimeout(() => {
+        router.push(`/auth/login?redirect=/checkout?plan=${planId}`);
+      }, 2000);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  if (!mounted) {
+    const userData = getUser();
+    console.log('[CHECKOUT] ✅ Usuario encontrado:', userData?.email);
+    console.log('[CHECKOUT] Usuario data completo:', userData);
+
+    setLoggedIn(true);
+    setUser(userData as { email: string; nombre?: string; plan_type?: string });
+    setSelectedPlan(planId);
+    setLoading(false);
+  }, [planId, router]);
+
+  const handleProceedToPayment = async () => {
+    try {
+      console.log('[CHECKOUT] ════════════════════════════════════════');
+      console.log('[CHECKOUT] 💳 Iniciando pago...');
+      console.log('[CHECKOUT] ════════════════════════════════════════');
+
+      setProcessing(true);
+
+      const email    = user?.email ?? '';
+      const planType = localStorage.getItem('plan_type') || 'gratuito';
+      const token    = getAuthToken();
+      const plan     = PLANS[selectedPlan.toUpperCase() as keyof typeof PLANS];
+
+      console.log('[CHECKOUT] 📊 Datos para Mercado Pago:');
+      console.log('[CHECKOUT]   - Email:', email);
+      console.log('[CHECKOUT]   - Plan Type (actual):', planType);
+      console.log('[CHECKOUT]   - Plan ID:', selectedPlan);
+      console.log('[CHECKOUT]   - Plan Name:', plan.name);
+      console.log('[CHECKOUT]   - Plan Price:', plan.price);
+      console.log('[CHECKOUT]   - Period:', plan.period);
+      console.log('[CHECKOUT]   - Suboption:', selectedSuboption || 'N/A');
+      console.log('[CHECKOUT]   - Token:', token?.substring(0, 30) + '...');
+
+      if (!email) throw new Error('Email del usuario no encontrado');
+
+      const body: Record<string, string> = {
+        email,
+        planeacion_id: 'subscription',
+        plan_type:     selectedPlan,
+      };
+      if (selectedSuboption) body.suboption = selectedSuboption;
+
+      console.log('[CHECKOUT] 📦 Body a enviar:', body);
+      console.log('[CHECKOUT] 📤 Enviando a backend:', `${API_URL}/purchase`);
+
+      const response = await fetch(`${API_URL}/purchase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+      console.log('[CHECKOUT] Response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[CHECKOUT] ❌ Error:', errorData);
+        throw new Error(errorData.error || 'Error creando preferencia');
+      }
+
+      const data = await response.json();
+      console.log('[CHECKOUT] ✅ Preferencia creada:', data);
+
+      if (data.checkout_url) {
+        console.log('[CHECKOUT] 🔗 Redirigiendo a Mercado Pago:', data.checkout_url);
+        window.location.href = data.checkout_url;
+      } else {
+        throw new Error('No se recibió URL de pago de MercadoPago');
+      }
+    } catch (err) {
+      console.error('[CHECKOUT] ❌ Error:', err);
+      setError(`Error al procesar el pago: ${err instanceof Error ? err.message : 'desconocido'}`);
+      setProcessing(false);
+    }
+  };
+
+  // ── Loading state ────────────────────────────────────────────────────────
+  if (loading) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-20 text-center text-gray-400 text-sm">
-        Cargando...
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Verificando sesión...</p>
+        </div>
       </div>
     );
   }
 
-  // ── Subscription mode ────────────────────────────────────────────────────
-  if (subscriptionPlan && SUBSCRIPTION_INFO[subscriptionPlan]) {
-    const info = SUBSCRIPTION_INFO[subscriptionPlan];
-    const isGradoPlan = subscriptionPlan === 'grado';
-    const canPay = userLoggedIn && (!isGradoPlan || !!selectedGrado);
-
-    async function handleSubscription() {
-      if (!userLoggedIn) {
-        router.push(`/auth/login?redirect=${encodeURIComponent(`/checkout?plan=${subscriptionPlan}`)}`);
-        return;
-      }
-      if (isGradoPlan && !selectedGrado) {
-        setError('Por favor selecciona tu grado antes de continuar.');
-        return;
-      }
-      setLoading(true);
-      setError('');
-      try {
-        const token = getAuthToken();
-        const body: Record<string, string> = {
-          email:         userEmail,
-          planeacion_id: 'subscription',
-          plan_type:     subscriptionPlan,
-        };
-        if (isGradoPlan && selectedGrado) body.grado = selectedGrado;
-
-        const res = await fetch(`${API_URL}/purchase`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al procesar el pago');
-        window.location.href = data.checkout_url;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al procesar el pago');
-        setLoading(false);
-      }
-    }
-
+  // ── Not logged in ────────────────────────────────────────────────────────
+  if (!loggedIn || !user) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-12">
-        {/* Session badge */}
-        {userLoggedIn && (
-          <div className="flex items-center gap-2 mb-6 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-            <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            Sesión activa · {userEmail}
-          </div>
-        )}
-
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">{info.name}</h1>
-        <p className="text-3xl font-bold text-blue-600 mb-6">{info.price}</p>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-          <ul className="space-y-3">
-            {info.features.map((f) => (
-              <li key={f} className="flex items-center gap-3 text-gray-700 text-sm">
-                <svg className="w-5 h-5 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Grade selector — only for Plan Grado */}
-        {isGradoPlan && (
-          <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-              Selecciona tu grado
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {GRADOS.map(({ id, label }) => (
-                <label
-                  key={id}
-                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                    selectedGrado === id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="grado"
-                    value={id}
-                    checked={selectedGrado === id}
-                    onChange={() => setSelectedGrado(id)}
-                    className="accent-blue-600"
-                  />
-                  <span className="text-sm font-medium text-gray-900">{label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700" role="alert">
-            {error}
-          </div>
-        )}
-
-        <button
-          onClick={handleSubscription}
-          disabled={loading || !canPay}
-          className="w-full bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading
-            ? 'Procesando...'
-            : !userLoggedIn
-            ? 'Iniciando sesión...'
-            : isGradoPlan && !selectedGrado
-            ? 'Selecciona tu grado para continuar'
-            : 'Suscribirse con MercadoPago'}
-        </button>
-
-        <p className="text-center text-xs text-gray-400 mt-3">
-          Pago seguro procesado por MercadoPago · Modo Sandbox habilitado
-        </p>
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-gray-500 hover:text-blue-600 transition-colors">
-            ← Volver al inicio
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <p className="text-red-600 font-bold text-lg mb-4">⚠️ No autenticado</p>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <p className="text-sm text-gray-500 mb-6">Redirigiendo a login en 2 segundos...</p>
+          <Link
+            href={`/auth/login?redirect=/checkout?plan=${planId}`}
+            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+          >
+            Ir a Login Ahora
           </Link>
         </div>
       </div>
     );
   }
 
-  // ── Document mode ────────────────────────────────────────────────────────
-  if (!planeacionId) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-20 text-center">
-        <p className="text-gray-500 mb-4">Planeación no especificada.</p>
-        <Link href="/catalog" className="text-blue-600 hover:underline font-medium">
-          ← Volver al catálogo
-        </Link>
-      </div>
-    );
-  }
-
-  async function handleCheckout() {
-    if (!userLoggedIn) {
-      router.push(
-        `/auth/login?redirect=${encodeURIComponent(`/checkout?planeacion_id=${planeacionId}&plan_type=${planType}`)}`
-      );
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const token = getAuthToken();
-      const res = await fetch(`${API_URL}/purchase`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          email:              userEmail,
-          planeacion_id:      planeacionId,
-          plan_type:          planType,
-          completeness_score: 0.8,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error al procesar el pago');
-
-      if (data.download_ready) {
-        router.push(`/dashboard?downloaded=${planeacionId}`);
-        return;
-      }
-      window.location.href = data.checkout_url;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al procesar el pago');
-      setLoading(false);
-    }
-  }
+  const plan = PLANS[selectedPlan.toUpperCase() as keyof typeof PLANS] ?? PLANS['GRADO'];
+  const priceDisplay = plan.price === 0 ? 'Gratis' : `$${plan.price.toLocaleString('es-MX')}`;
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-12">
-      {/* Session badge */}
-      {userLoggedIn && (
-        <div className="flex items-center gap-2 mb-6 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-          <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-          Sesión activa · {userEmail}
+    <div className="min-h-screen bg-gray-50 py-12 px-4">
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <Link href="/maestro/dashboard" className="text-blue-600 hover:text-blue-700 mb-6 inline-block text-sm">
+            ← Volver al Dashboard
+          </Link>
+          <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
         </div>
-      )}
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Finalizar compra</h1>
-      <p className="text-gray-500 mb-8 text-sm">
-        Selecciona tu plan y procede al pago seguro con MercadoPago.
-      </p>
+        {/* Error */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-8 text-sm">
+            {error}
+          </div>
+        )}
 
-      {/* Plan selector */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-          Selecciona tu plan
-        </h2>
-        <div className="space-y-3">
-          {PLAN_OPTIONS.map(({ key, label, price, desc }) => (
-            <label
-              key={key}
-              className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer transition-colors ${
-                planType === key
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="radio"
-                  name="plan_type"
-                  value={key}
-                  checked={planType === key}
-                  onChange={() => setPlanType(key)}
-                  className="accent-blue-600"
-                />
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{label}</p>
-                  <p className="text-xs text-gray-500">{desc}</p>
-                </div>
+        {/* User Info */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Usuario Autenticado</h3>
+              <p className="text-gray-600 mt-1 text-sm">Email: {user.email}</p>
+              <p className="text-gray-600 text-sm">Nombre: {user.nombre || 'Sin nombre'}</p>
+            </div>
+            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold shrink-0">
+              ✅ Sesión activa
+            </span>
+          </div>
+        </div>
+
+        {/* Plan Summary */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Resumen del Plan</h2>
+
+          <div className="border-b border-gray-200 pb-4 mb-4">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{plan.name}</h3>
+                <p className="text-gray-600 mt-1 text-sm">{plan.description}</p>
               </div>
-              <span className="text-sm font-semibold text-gray-800 shrink-0 ml-4">{price}</span>
-            </label>
-          ))}
+              <div className="text-right ml-4">
+                <p className="text-3xl font-bold text-gray-900">{priceDisplay}</p>
+                <p className="text-gray-600 text-sm">/ {plan.period}</p>
+              </div>
+            </div>
+
+            <ul className="space-y-2">
+              {plan.features.map((feature, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                  <span className="text-green-600 shrink-0">✓</span>
+                  {feature}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Suboptions for Pro */}
+          {plan.suboptions && (
+            <div className="mb-4">
+              <h4 className="font-semibold text-gray-900 mb-3 text-sm">Elige tu versión:</h4>
+              <div className="space-y-2">
+                {plan.suboptions.map((option) => (
+                  <label
+                    key={option.id}
+                    className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
+                      selectedSuboption === option.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="suboption"
+                      value={option.id}
+                      checked={selectedSuboption === option.id}
+                      onChange={(e) => setSelectedSuboption(e.target.value)}
+                      className="mt-0.5 mr-3 accent-blue-600"
+                    />
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{option.name}</p>
+                      <p className="text-xs text-gray-600">{option.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Total */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2 text-sm">
+              <span className="text-gray-700">Subtotal</span>
+              <span className="font-semibold text-gray-900">{priceDisplay}</span>
+            </div>
+            <div className="flex justify-between items-center border-t border-gray-200 pt-2">
+              <span className="font-bold text-gray-900 text-sm">Total ({plan.period})</span>
+              <span className="text-2xl font-bold text-gray-900">{priceDisplay}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-700" role="alert">
-          {error}
+        {/* Payment Method */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Método de Pago</h2>
+          <div className="flex items-center p-4 border border-blue-300 bg-blue-50 rounded-lg">
+            <div className="w-12 h-8 bg-blue-600 rounded mr-4 flex items-center justify-center text-white text-sm font-bold shrink-0">
+              MP
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900 text-sm">Mercado Pago</p>
+              <p className="text-xs text-gray-600">Tarjeta de crédito, débito o transferencia · Sandbox habilitado</p>
+            </div>
+          </div>
         </div>
-      )}
 
-      <button
-        onClick={handleCheckout}
-        disabled={loading || !userLoggedIn}
-        className="w-full bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? 'Procesando...' : !userLoggedIn ? 'Iniciando sesión...' : 'Pagar con MercadoPago'}
-      </button>
+        {/* Actions */}
+        <div className="flex gap-4">
+          <Link
+            href="/maestro/dashboard"
+            className="flex-1 px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 text-center text-sm"
+          >
+            Cancelar
+          </Link>
+          <button
+            onClick={handleProceedToPayment}
+            disabled={processing || (!!plan.suboptions && !selectedSuboption)}
+            className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {processing
+              ? '⏳ Procesando...'
+              : plan.suboptions && !selectedSuboption
+              ? 'Elige tu versión primero'
+              : '💳 Proceder al Pago'}
+          </button>
+        </div>
 
-      <p className="text-center text-xs text-gray-400 mt-3">
-        Pago seguro procesado por MercadoPago · Modo Sandbox habilitado
-      </p>
-      <div className="mt-6 text-center">
-        <Link href="/catalog" className="text-sm text-gray-500 hover:text-blue-600 transition-colors">
-          ← Volver al catálogo
-        </Link>
+        <p className="text-center text-xs text-gray-500 mt-6">
+          Al continuar, aceptas nuestros términos de servicio y política de privacidad.
+        </p>
       </div>
     </div>
   );
@@ -371,8 +312,8 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-lg mx-auto px-4 py-20 text-center text-gray-400 text-sm">
-          Cargando...
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
         </div>
       }
     >
