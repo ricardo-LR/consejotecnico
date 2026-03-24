@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getPlan, type PlanId } from '@/config/plans';
 import { isLoggedIn } from '@/lib/auth';
 
@@ -11,6 +11,7 @@ interface PlanCardProps {
 }
 
 export default function PlanCard({ planId, featured = false }: PlanCardProps) {
+  const router = useRouter();
   const [loggedIn, setLoggedIn] = useState(false);
   const [mounted, setMounted] = useState(false);
   const plan = getPlan(planId);
@@ -21,6 +22,18 @@ export default function PlanCard({ planId, featured = false }: PlanCardProps) {
   }, []);
 
   if (!mounted) return null;
+
+  function handlePlanClick() {
+    if (plan.id === 'gratuito') {
+      router.push(loggedIn ? '/catalog' : '/auth/register');
+      return;
+    }
+    if (loggedIn) {
+      router.push(`/checkout?plan=${plan.id}`);
+    } else {
+      router.push(`/auth/login?redirect=${encodeURIComponent(`/checkout?plan=${plan.id}`)}`);
+    }
+  }
 
   const priceDisplay =
     plan.price === 0 ? 'Gratis' : `$${plan.price.toLocaleString('es-MX')}`;
@@ -63,16 +76,16 @@ export default function PlanCard({ planId, featured = false }: PlanCardProps) {
         ))}
       </ul>
 
-      <Link
-        href={loggedIn && plan.id !== 'gratuito' ? plan.href : plan.href}
-        className={`block text-center py-3 px-6 rounded-lg font-semibold transition ${
+      <button
+        onClick={handlePlanClick}
+        className={`w-full text-center py-3 px-6 rounded-lg font-semibold transition ${
           featured
             ? 'bg-white text-blue-600 hover:bg-blue-50'
             : 'bg-blue-600 text-white hover:bg-blue-700'
         }`}
       >
         {plan.id === 'gratuito' && loggedIn ? 'Ver catálogo' : plan.buttonText}
-      </Link>
+      </button>
 
       {'suboptions' in plan && plan.suboptions && (
         <div className={`mt-6 pt-6 border-t ${featured ? 'border-blue-400' : 'border-gray-200'}`}>
