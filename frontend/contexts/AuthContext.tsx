@@ -32,7 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const savedUser = localStorage.getItem('auth_user');
     if (savedToken && savedUser) {
       setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      const parsed: User = JSON.parse(savedUser);
+      setUser(parsed);
+      // Sync maestro workspace keys
+      if (!localStorage.getItem('token')) {
+        localStorage.setItem('token', savedToken);
+        localStorage.setItem('email', parsed.email);
+        localStorage.setItem('plan_type', parsed.subscription || 'gratuito');
+      }
     }
     setIsLoading(false);
   }, []);
@@ -57,6 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(user);
     localStorage.setItem('auth_token', data.token);
     localStorage.setItem('auth_user', JSON.stringify(user));
+    // Also set keys used by maestro workspace
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('email', data.email);
+    localStorage.setItem('plan_type', data.plan_type || 'gratuito');
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
@@ -79,6 +90,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(user);
     localStorage.setItem('auth_token', data.token);
     localStorage.setItem('auth_user', JSON.stringify(user));
+    // Also set keys used by maestro workspace
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('email', data.email);
+    localStorage.setItem('plan_type', data.plan_type || 'gratuito');
   }, []);
 
   const logout = useCallback(() => {
@@ -86,6 +101,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('email');
+    localStorage.removeItem('plan_type');
   }, []);
 
   return (
