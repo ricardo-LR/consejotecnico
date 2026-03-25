@@ -115,9 +115,12 @@ function CheckoutContent() {
       const data = await response.json();
       console.log('[CHECKOUT] ✅ Preferencia creada:', data);
 
-      if (data.checkout_url) {
-        console.log('[CHECKOUT] 🔗 Redirigiendo a Mercado Pago:', data.checkout_url);
-        window.location.href = data.checkout_url;
+      // Backend siempre elige la URL correcta (sandbox o prod) en init_point
+      const mpUrl = data.init_point || data.checkout_url;
+      console.log('[CHECKOUT] is_sandbox:', data.is_sandbox);
+      if (mpUrl) {
+        console.log('[CHECKOUT] 🔗 Redirigiendo a Mercado Pago:', mpUrl);
+        window.location.href = mpUrl;
       } else {
         throw new Error('No se recibió URL de pago de MercadoPago');
       }

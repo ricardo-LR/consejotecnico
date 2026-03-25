@@ -64,7 +64,9 @@ def handler(event, context):
     if not access_token:
         return _err("Token de Mercado Pago no configurado", 500)
 
-    print(f"[PURCHASE] token prefix: {access_token[:12]}...")
+    # Detect sandbox by token prefix — TEST- = sandbox, APP_USR- = production
+    is_sandbox = access_token.startswith("TEST-")
+    print(f"[PURCHASE] token prefix: {access_token[:15]}... sandbox={is_sandbox}")
 
     preference_data = {
         "items": [{
@@ -107,18 +109,23 @@ def handler(event, context):
         print(f"[PURCHASE] MP request exception: {e}")
         return _err(str(e), 502)
 
-    pref_id       = result.get("id", "")
-    sandbox_url   = result.get("sandbox_init_point", "")
-    live_url      = result.get("init_point", "")
-    checkout_url  = sandbox_url or live_url
+    pref_id     = result.get("id", "")
+    sandbox_url = result.get("sandbox_init_point", "")
+    live_url    = result.get("init_point", "")
 
-    print(f"[PURCHASE] preference id={pref_id} url={checkout_url[:60]}...")
+    # REGLA DE ORO: TEST- token → sandbox_init_point, APP_USR- token → init_point
+    # Nunca mezclar. Mezclar causa ERR_TOO_MANY_REDIRECTS.
+    init_point = sandbox_url if is_sandbox else live_url
+
+    print(f"[PURCHASE] pref_id={pref_id} is_sandbox={is_sandbox}")
+    print(f"[PURCHASE] init_point={init_point[:70]}...")
 
     return _ok({
-        "purchase_id":          pref_id,
-        "checkout_url":         checkout_url,
-        "sandbox_init_point":   sandbox_url,
-        "init_point":           live_url,
-        "plan_type":            plan_type,
-        "status":               "PENDING",
+        "purchase_id":        pref_id,
+        "init_point":         init_point,       # correcto según modo sandbox/prod
+        "checkout_url":       init_point,       # alias para compatibilidad frontend
+        "sandbox_init_point": sandbox_url,
+        "is_sandbox":         is_sandbox,
+        "plan_type":          plan_type,
+        "status":             "PENDING",
     })
