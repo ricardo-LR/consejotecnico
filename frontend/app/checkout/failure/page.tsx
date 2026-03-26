@@ -1,34 +1,43 @@
-'use client';
-
 export default function CheckoutFailure() {
   return (
-    <div className="min-h-screen bg-red-50 flex items-center justify-center px-4">
-      <div className="text-center p-8 max-w-md">
-        <div className="text-6xl mb-4">❌</div>
-        <h1 className="text-3xl font-bold text-red-700 mb-4">
-          Pago no procesado
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#fef2f2',
+      fontFamily: 'Arial, sans-serif',
+    }}>
+      <div style={{
+        textAlign: 'center',
+        padding: '3rem',
+        maxWidth: '480px',
+        backgroundColor: 'white',
+        borderRadius: '1rem',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+      }}>
+        <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>❌</div>
+        <h1 style={{ color: '#dc2626', marginBottom: '0.5rem' }}>
+          Pago no completado
         </h1>
-        <p className="text-gray-600 mb-3">
-          No se pudo completar el pago. Puede haber sido rechazado
-          o cancelado.
+        <p style={{ color: '#6b7280', marginBottom: '2rem' }}>
+          Hubo un problema con tu pago. Puedes intentarlo de nuevo.
         </p>
-        <p className="text-gray-500 text-sm mb-8">
-          No se realizó ningún cargo. Puedes intentarlo de nuevo.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <a
-            href="/checkout?plan=grado"
-            className="inline-block px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Intentar de nuevo
-          </a>
-          <a
-            href="/pricing"
-            className="inline-block px-8 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
-          >
-            Ver Planes
-          </a>
-        </div>
+        <a
+          href="/catalogo"
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#dc2626',
+            color: 'white',
+            padding: '0.875rem 2.5rem',
+            borderRadius: '0.5rem',
+            textDecoration: 'none',
+            fontWeight: 'bold',
+            fontSize: '1rem',
+          }}
+        >
+          Intentar de nuevo
+        </a>
       </div>
     </div>
   );
