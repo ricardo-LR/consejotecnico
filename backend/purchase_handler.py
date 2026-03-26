@@ -1,12 +1,15 @@
 """
 Standalone MercadoPago purchase handler.
-Uses only stdlib — no layer or SDK required.
+Uses stdlib + boto3 (built into Lambda runtime) — no layer required.
 Lambda handler: purchase_handler.handler
 """
 import json
 import os
+import uuid
 import urllib.request
 import urllib.error
+from datetime import datetime, timezone
+import boto3
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "https://db0i745ypndsx.cloudfront.net",
@@ -18,6 +21,17 @@ CORS_HEADERS = {
 SUCCESS_URL = "https://db0i745ypndsx.cloudfront.net/checkout/success"
 FAILURE_URL = "https://db0i745ypndsx.cloudfront.net/checkout/failure"
 PENDING_URL = "https://db0i745ypndsx.cloudfront.net/checkout/pending"
+
+DYNAMODB_TABLE_PURCHASES = os.environ.get("DYNAMODB_TABLE_PURCHASES", "consejotecnico-purchases")
+AWS_REGION               = os.environ.get("AWS_REGION", "us-east-1")
+
+_db = None
+
+def _get_db():
+    global _db
+    if _db is None:
+        _db = boto3.resource("dynamodb", region_name=AWS_REGION)
+    return _db
 
 PRECIOS = {"grado": 499, "pro": 999}
 NOMBRES = {
@@ -81,7 +95,6 @@ def handler(event, context):
             "failure": FAILURE_URL,
             "pending": PENDING_URL,
         },
-        "auto_return": "approved",
         "external_reference": f"{email}|{plan_type}",
         "metadata": {"email": email, "plan_type": plan_type},
     }
@@ -119,6 +132,24 @@ def handler(event, context):
 
     print(f"[PURCHASE] pref_id={pref_id} is_sandbox={is_sandbox}")
     print(f"[PURCHASE] init_point={init_point[:70]}...")
+
+    # Guardar registro en DynamoDB para que el webhook lo encuentre
+    try:
+        purchase_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        _get_db().Table(DYNAMODB_TABLE_PURCHASES).put_item(Item={
+            "purchaseId":      purchase_id,
+            "email":           email,
+            "planType":        plan_type,
+            "mpPreferenceId":  pref_id,
+            "status":          "PENDING",
+            "createdAt":       now,
+            "updatedAt":       now,
+        })
+        print(f"[PURCHASE] Purchase record saved: {purchase_id}")
+    except Exception as e:
+        print(f"[PURCHASE] WARNING: DynamoDB save failed: {e}")
+        # No es fatal — continuamos con la respuesta
 
     return _ok({
         "purchase_id":        pref_id,
