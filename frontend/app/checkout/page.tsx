@@ -67,9 +67,6 @@ function CheckoutContent() {
         onFormMounted: (err: any) => {
           if (err) { console.error('[MP] Form mount error:', err); return; }
           setMpReady(true);
-          // Pre-rellenar email del usuario
-          const el = document.getElementById('form-checkout__cardholderEmail') as HTMLInputElement | null;
-          if (el && userRef.current?.email) el.value = userRef.current.email;
         },
 
         onSubmit: async (event: any) => {
@@ -88,7 +85,11 @@ function CheckoutContent() {
               identificationType,
             } = cardForm.getCardFormData();
 
-            const userEmail = userRef.current?.email || cardholderEmail || '';
+            // email del usuario logueado → para DynamoDB (quién compra el plan)
+            const accountEmail = userRef.current?.email || '';
+            // cardholderEmail → para Mercado Pago (dueño de la tarjeta)
+            // MP rechaza emails de cuentas reales de MP en sandbox;
+            // el usuario debe ingresar cualquier email no-MP.
 
             const body = {
               token,
@@ -98,9 +99,9 @@ function CheckoutContent() {
               installments:        Number(installments),
               description:         plan.nombre,
               plan_type:           planId,
-              email:               userEmail,
+              email:               accountEmail,
               payer: {
-                email:          cardholderEmail || userEmail,
+                email:          cardholderEmail,
                 identification: {
                   type:   identificationType   || 'RFC',
                   number: identificationNumber || 'XAXX010101000',
@@ -257,12 +258,12 @@ function CheckoutContent() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email del titular
+              Email del titular de la tarjeta
             </label>
             <input
               type="email"
               id="form-checkout__cardholderEmail"
-              placeholder="Email"
+              placeholder="correo@ejemplo.com"
               className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
