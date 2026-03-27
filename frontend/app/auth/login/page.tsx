@@ -20,7 +20,7 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
 
       console.log('[LOGIN] ════════════════════════════════════════');
       console.log('[LOGIN] Iniciando login');
