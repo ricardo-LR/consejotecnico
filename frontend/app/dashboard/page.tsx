@@ -44,16 +44,8 @@ export default function Dashboard() {
 
     console.log('[DASHBOARD] ✅ Token encontrado en localStorage');
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
     console.log('[DASHBOARD] API URL:', apiUrl);
-
-    if (!apiUrl) {
-      console.error('[DASHBOARD] ❌ NEXT_PUBLIC_API_URL no definida');
-      setError('API URL no configurada');
-      setLoading(false);
-      return;
-    }
-
     console.log('[DASHBOARD] 📡 Haciendo fetch a /auth/me');
 
     fetch(`${apiUrl}/auth/me`, {

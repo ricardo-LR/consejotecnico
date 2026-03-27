@@ -125,6 +125,17 @@ function CheckoutContent() {
 
             if (data.status === 'approved') {
               setStatus('success');
+              // Refresh plan in localStorage so maestro dashboard shows updated plan immediately
+              try {
+                const meRes = await fetch(`${API}/auth/me`, {
+                  headers: { Authorization: `Bearer ${getAuthToken()}` },
+                });
+                if (meRes.ok) {
+                  const meData = await meRes.json();
+                  if (meData.plan_type) localStorage.setItem('plan_type', meData.plan_type);
+                  if (meData.email)     localStorage.setItem('email', meData.email);
+                }
+              } catch { /* non-critical */ }
               setTimeout(() => { window.location.href = '/checkout/success'; }, 1500);
             } else if (data.status === 'in_process' || data.status === 'pending') {
               window.location.href = '/checkout/pending';

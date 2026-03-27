@@ -68,6 +68,9 @@ jobs:
 
       - name: Frontend — install & lint & build
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev
+          NEXT_PUBLIC_MERCADOPAGO_KEY: TEST-c9279164-9470-4b2c-bd4c-d1ec1f3198cd
         run: |
           npm ci
           if npm run | grep -q "^\s*lint\b"; then npm run lint; fi
@@ -117,6 +120,9 @@ jobs:
 
       - name: Build Next.js (static export)
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev
+          NEXT_PUBLIC_MERCADOPAGO_KEY: TEST-c9279164-9470-4b2c-bd4c-d1ec1f3198cd
         run: npm run build
         # next.config.ts must have `output: 'export'` for static S3 hosting.
         # The output directory is `frontend/out/`.

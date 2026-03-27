@@ -19,7 +19,7 @@ DYNAMODB_TABLE_DIARIO = "consejotecnico-diario"
 # Security
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-key")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 1
+JWT_EXPIRATION_HOURS = 24
 
 # Environment
 DEBUG = os.getenv("DEBUG", "False") == "True"

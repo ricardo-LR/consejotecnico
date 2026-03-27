@@ -56,7 +56,12 @@ export default function MaestroDashboardPage() {
       const gruposRes = await fetch(`${API_URL}/maestro/grupos`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!gruposRes.ok) throw new Error('Error al cargar grupos');
+      if (gruposRes.status === 401) {
+        localStorage.removeItem('token');
+        router.push('/auth/login');
+        return;
+      }
+      if (!gruposRes.ok) throw new Error(`Error al cargar grupos (${gruposRes.status})`);
       const gruposData = await gruposRes.json();
       const grupos: Grupo[] = gruposData.items ?? [];
 
