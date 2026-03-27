@@ -17,7 +17,7 @@ from jose import jwt, JWTError
 from src.config.settings import JWT_SECRET, JWT_ALGORITHM, AWS_REGION, DYNAMODB_TABLE_USERS
 
 # ── Hardcoded admin credentials ───────────────────────────────────────────────
-ADMIN_EMAIL    = "admin@consejotecnico.com"
+ADMIN_EMAIL = "admin@consejotecnico.com"
 ADMIN_PASSWORD = "Admin123!"
 ADMIN_TOKEN_HOURS = 24
 
@@ -78,10 +78,10 @@ def _verify_admin_token(event: dict) -> bool:
 
 def _create_admin_token(email: str) -> str:
     payload = {
-        "email":    email,
-        "role":     "admin",
+        "email": email,
+        "role": "admin",
         "admin_id": "consejotecnico-admin",
-        "exp":      datetime.utcnow() + timedelta(hours=ADMIN_TOKEN_HOURS),
+        "exp": datetime.utcnow() + timedelta(hours=ADMIN_TOKEN_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -105,6 +105,7 @@ def _list_users() -> list:
 
 # ── Handler ───────────────────────────────────────────────────────────────────
 
+
 def handler(event: dict, context) -> dict:
     """AWS Lambda handler."""
     http_method = event.get("httpMethod", "POST")
@@ -121,8 +122,8 @@ def handler(event: dict, context) -> dict:
             email_filter = (event.get("queryStringParameters") or {}).get("email")
             if email_filter:
                 table = _get_users_table()
-                resp  = table.get_item(Key={"email": email_filter.strip().lower()})
-                item  = resp.get("Item")
+                resp = table.get_item(Key={"email": email_filter.strip().lower()})
+                item = resp.get("Item")
                 if item:
                     item.pop("password_hash", None)
                 return _ok({"item": item})
@@ -137,7 +138,7 @@ def handler(event: dict, context) -> dict:
     except (json.JSONDecodeError, TypeError):
         return _err("El cuerpo de la solicitud no es JSON válido.", 400)
 
-    email    = body.get("email", "").strip().lower()
+    email = body.get("email", "").strip().lower()
     password = body.get("password", "")
 
     if not email or not password:

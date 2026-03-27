@@ -26,13 +26,11 @@ def _get_table():
 
 
 def _ok(body: dict, status: int = 200) -> dict:
-    return {"statusCode": status, "headers": CORS,
-            "body": json.dumps(body, ensure_ascii=False, default=str)}
+    return {"statusCode": status, "headers": CORS, "body": json.dumps(body, ensure_ascii=False, default=str)}
 
 
 def _err(msg: str, status: int = 400) -> dict:
-    return {"statusCode": status, "headers": CORS,
-            "body": json.dumps({"error": msg}, ensure_ascii=False)}
+    return {"statusCode": status, "headers": CORS, "body": json.dumps({"error": msg}, ensure_ascii=False)}
 
 
 def handler(event: dict, context) -> dict:
@@ -61,11 +59,13 @@ def handler(event: dict, context) -> dict:
     item = resp.get("Item")
     if not item:
         # Fallback: return data from JWT claims
-        return _ok({
-            "email":     email,
-            "nombre":    payload.get("nombre", ""),
-            "plan_type": payload.get("plan_type", "gratuito"),
-        })
+        return _ok(
+            {
+                "email": email,
+                "nombre": payload.get("nombre", ""),
+                "plan_type": payload.get("plan_type", "gratuito"),
+            }
+        )
 
     item.pop("password_hash", None)
     return _ok(item)

@@ -55,6 +55,7 @@ def _err(message: str, status: int = 400) -> dict:
 # Actions
 # ──────────────────────────────────────────────
 
+
 def list_planeaciones(tema: str | None = None, grado: str | None = None, page: int = 1) -> dict:
     """
     Return a paginated list of planeaciones.
@@ -78,17 +79,13 @@ def list_planeaciones(tema: str | None = None, grado: str | None = None, page: i
                 "Limit": PAGE_SIZE * page,  # over-fetch for simple offset paging
             }
             if grado:
-                query_kwargs["FilterExpression"] = (
-                    boto3.dynamodb.conditions.Attr("grado").eq(grado)
-                )
+                query_kwargs["FilterExpression"] = boto3.dynamodb.conditions.Attr("grado").eq(grado)
             resp = table.query(**query_kwargs)
         else:
             # No tema filter — full scan (should only be used by admin queries)
             scan_kwargs: dict = {"Limit": PAGE_SIZE * page}
             if grado:
-                scan_kwargs["FilterExpression"] = (
-                    boto3.dynamodb.conditions.Attr("grado").eq(grado)
-                )
+                scan_kwargs["FilterExpression"] = boto3.dynamodb.conditions.Attr("grado").eq(grado)
             resp = table.scan(**scan_kwargs)
 
     except ClientError as exc:
@@ -140,6 +137,7 @@ def get_planeacion(planeacion_id: str) -> dict:
 # ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
+
 
 def handler(event: dict, context) -> dict:
     """AWS Lambda handler — supports both API Gateway HTTP API and direct invocation."""

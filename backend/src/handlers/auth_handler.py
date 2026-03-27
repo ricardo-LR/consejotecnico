@@ -74,6 +74,7 @@ def _parse_body(event: dict) -> dict:
 # Actions
 # ──────────────────────────────────────────────
 
+
 def login(email: str, password: str) -> dict:
     """
     Validate credentials and return a JWT token.
@@ -183,6 +184,7 @@ def register(email: str, password: str, nombre: str) -> dict:
 # ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
+
 
 def handler(event: dict, context) -> dict:
     """AWS Lambda handler."""

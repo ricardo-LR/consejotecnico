@@ -16,6 +16,7 @@ NOMBRE_MIN_LEN = 3
 # Public validators
 # ──────────────────────────────────────────────
 
+
 def validate_email(email: str) -> tuple[bool, str]:
     """
     Validate email format.

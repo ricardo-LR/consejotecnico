@@ -42,6 +42,7 @@ from src.models.pricing import calculate_price, get_tier, validate_access
 # Logging helper
 # ──────────────────────────────────────────────
 
+
 def _log(msg: str) -> None:
     """Print to stderr so CloudWatch captures it regardless of stdout buffering."""
     print(f"[PURCHASE] {msg}", file=sys.stderr)
@@ -135,6 +136,7 @@ def _parse_body(event: dict) -> dict:
 # Main action
 # ──────────────────────────────────────────────
 
+
 def create_purchase(
     email: str,
     planeacion_id: str,
@@ -146,7 +148,9 @@ def create_purchase(
     Validate access, resolve price, create a MercadoPago preference (or grant
     a free download), persist a purchase record, and return the result.
     """
-    _log(f"create_purchase called: email={email} plan={plan_type} planeacion={planeacion_id} grado={grado} score={completeness_score}")
+    _log(
+        f"create_purchase called: email={email} plan={plan_type} planeacion={planeacion_id} grado={grado} score={completeness_score}"
+    )
 
     # 1. Input validation
     is_subscription = plan_type in ("grado", "pro")
@@ -209,16 +213,16 @@ def create_purchase(
         purchase_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         purchase_item = {
-            "purchaseId":   purchase_id,
-            "email":        email,
+            "purchaseId": purchase_id,
+            "email": email,
             "planeacionId": planeacion_id,
-            "planType":     plan_type,
-            "price":        "0",
-            "currency":     "MXN",
-            "status":       "COMPLETED",
+            "planType": plan_type,
+            "price": "0",
+            "currency": "MXN",
+            "status": "COMPLETED",
             "statusReason": "free_document",
-            "createdAt":    now,
-            "updatedAt":    now,
+            "createdAt": now,
+            "updatedAt": now,
         }
         try:
             _save_purchase(purchase_item)
@@ -226,15 +230,18 @@ def create_purchase(
         except ClientError as exc:
             _log(f"Warning: could not save free purchase record: {exc}")
 
-        return _ok({
-            "purchase_id":    purchase_id,
-            "status":         "COMPLETED",
-            "price":          0,
-            "currency":       "MXN",
-            "plan_type":      plan_type,
-            "download_ready": True,
-            "planeacion_id":  planeacion_id,
-        }, status=200)
+        return _ok(
+            {
+                "purchase_id": purchase_id,
+                "status": "COMPLETED",
+                "price": 0,
+                "currency": "MXN",
+                "plan_type": plan_type,
+                "download_ready": True,
+                "planeacion_id": planeacion_id,
+            },
+            status=200,
+        )
 
     if price == 0:
         return _err("El plan gratuito no requiere pago.", 400)
@@ -244,10 +251,7 @@ def create_purchase(
     purchase_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    item_title = (
-        planeacion.get("titulo", tier["label"]) if planeacion
-        else tier["label"]
-    )
+    item_title = planeacion.get("titulo", tier["label"]) if planeacion else tier["label"]
     preference_data = {
         "items": [
             {
@@ -280,7 +284,9 @@ def create_purchase(
     try:
         mp = _get_mp()
         pref_response = mp.preference().create(preference_data)
-        _log(f"MP response status: {pref_response.get('status')} response keys: {list(pref_response.get('response', {}).keys())}")
+        _log(
+            f"MP response status: {pref_response.get('status')} response keys: {list(pref_response.get('response', {}).keys())}"
+        )
     except RuntimeError as exc:
         _log(f"RuntimeError from MP: {exc}")
         return _err(str(exc), 500)
@@ -298,27 +304,23 @@ def create_purchase(
         )
 
     preference = pref_response["response"]
-    checkout_url = (
-        preference.get("sandbox_init_point", "")
-        if MP_SANDBOX_MODE
-        else preference.get("init_point", "")
-    )
+    checkout_url = preference.get("sandbox_init_point", "") if MP_SANDBOX_MODE else preference.get("init_point", "")
     _log(f"MP preference created: id={preference.get('id')} url={checkout_url[:60]}...")
 
     # 7. Persist pending purchase record
     purchase_item = {
-        "purchaseId":    purchase_id,
-        "email":         email,
-        "planeacionId":  planeacion_id,
-        "planType":      plan_type,
-        "grado":         grado,
-        "price":         str(price),
-        "currency":      "MXN",
-        "status":        "PENDING",
+        "purchaseId": purchase_id,
+        "email": email,
+        "planeacionId": planeacion_id,
+        "planType": plan_type,
+        "grado": grado,
+        "price": str(price),
+        "currency": "MXN",
+        "status": "PENDING",
         "mpPreferenceId": preference.get("id", ""),
-        "sandboxMode":   MP_SANDBOX_MODE,
-        "createdAt":     now,
-        "updatedAt":     now,
+        "sandboxMode": MP_SANDBOX_MODE,
+        "createdAt": now,
+        "updatedAt": now,
     }
 
     try:
@@ -330,14 +332,14 @@ def create_purchase(
     _log(f"Returning PENDING checkout: purchase_id={purchase_id}")
     return _ok(
         {
-            "purchase_id":     purchase_id,
-            "status":          "PENDING",
-            "checkout_url":    checkout_url,
-            "price":           price,
-            "currency":        "MXN",
-            "plan_type":       plan_type,
+            "purchase_id": purchase_id,
+            "status": "PENDING",
+            "checkout_url": checkout_url,
+            "price": price,
+            "currency": "MXN",
+            "plan_type": plan_type,
             "mp_preference_id": preference.get("id", ""),
-            "sandbox_mode":    MP_SANDBOX_MODE,
+            "sandbox_mode": MP_SANDBOX_MODE,
         },
         status=201,
     )
@@ -346,6 +348,7 @@ def create_purchase(
 # ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
+
 
 def handler(event: dict, context) -> dict:
     """AWS Lambda handler."""

@@ -20,13 +20,13 @@ PRICING_TIERS = {
     # ── Subscription plans ────────────────────────────────────────────────────
     "gratuito": {
         "price": 0,
-        "planeaciones": -1,          # unlimited (free docs only)
+        "planeaciones": -1,  # unlimited (free docs only)
         "label": "Gratuito",
         "description": "Cuenta gratuita — compra documentos individuales",
     },
     "grado": {
         "price": 499,
-        "planeaciones": -1,          # unlimited within locked grade
+        "planeaciones": -1,  # unlimited within locked grade
         "days": 365,
         "grado_restricted": True,
         "label": "Plan Grado",
@@ -34,7 +34,7 @@ PRICING_TIERS = {
     },
     "pro": {
         "price": 999,
-        "planeaciones": -1,          # unlimited, all grades
+        "planeaciones": -1,  # unlimited, all grades
         "days": 365,
         "grado_restricted": False,
         "label": "Plan Pro",
@@ -45,6 +45,7 @@ PRICING_TIERS = {
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────
+
 
 def get_tier(plan_type: str) -> dict | None:
     """Return tier config or None if not found."""

@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import boto3
 from datetime import datetime, timezone
 
@@ -29,6 +30,8 @@ from src.config.settings import (
     MP_ACCESS_TOKEN,
     MP_WEBHOOK_SECRET,
 )
+
+DYNAMODB_TABLE_USERS = os.environ.get("DYNAMODB_TABLE_USERS", "consejotecnico-users")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -77,6 +80,7 @@ def _err(msg: str, status: int = 400) -> dict:
 # Signature validation
 # ──────────────────────────────────────────────
 
+
 def _validate_signature(event: dict, payment_id: str) -> bool:
     """
     Validate MP webhook signature.
@@ -122,12 +126,11 @@ def _validate_signature(event: dict, payment_id: str) -> bool:
 # DynamoDB helpers
 # ──────────────────────────────────────────────
 
+
 def _find_purchase_by_preference(mp_preference_id: str) -> dict | None:
     """Scan purchases table for a record matching mpPreferenceId."""
     table = _get_db().Table(DYNAMODB_TABLE_PURCHASES)
-    resp = table.scan(
-        FilterExpression=boto3.dynamodb.conditions.Attr("mpPreferenceId").eq(mp_preference_id)
-    )
+    resp = table.scan(FilterExpression=boto3.dynamodb.conditions.Attr("mpPreferenceId").eq(mp_preference_id))
     items = resp.get("Items", [])
     return items[0] if items else None
 
@@ -135,11 +138,27 @@ def _find_purchase_by_preference(mp_preference_id: str) -> dict | None:
 def _find_purchase_by_mp_payment_id(mp_payment_id: str) -> dict | None:
     """Scan purchases table for a record matching mpPaymentId."""
     table = _get_db().Table(DYNAMODB_TABLE_PURCHASES)
-    resp = table.scan(
-        FilterExpression=boto3.dynamodb.conditions.Attr("mpPaymentId").eq(mp_payment_id)
-    )
+    resp = table.scan(FilterExpression=boto3.dynamodb.conditions.Attr("mpPaymentId").eq(mp_payment_id))
     items = resp.get("Items", [])
     return items[0] if items else None
+
+
+def _upgrade_user_plan(email: str, plan_type: str) -> None:
+    """Update plan_type in the users table when a payment is approved."""
+    if not email or not plan_type:
+        logger.warning("_upgrade_user_plan called with empty email=%s plan_type=%s", email, plan_type)
+        return
+    table = _get_db().Table(DYNAMODB_TABLE_USERS)
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        table.update_item(
+            Key={"email": email},
+            UpdateExpression="SET plan_type = :p, updatedAt = :u",
+            ExpressionAttributeValues={":p": plan_type, ":u": now},
+        )
+        logger.info("User %s upgraded to plan=%s", email, plan_type)
+    except Exception as exc:
+        logger.error("Failed to upgrade user %s plan: %s", email, exc)
 
 
 def _update_purchase_status(
@@ -178,11 +197,11 @@ def _update_purchase_status(
 # Map MP payment status → our internal status
 STATUS_MAP = {
     "approved": "COMPLETED",
-    "pending":  "PENDING",
+    "pending": "PENDING",
     "in_process": "PENDING",
-    "rejected":  "FAILED",
+    "rejected": "FAILED",
     "cancelled": "CANCELLED",
-    "refunded":  "REFUNDED",
+    "refunded": "REFUNDED",
     "charged_back": "REFUNDED",
 }
 
@@ -201,9 +220,7 @@ def _process_payment_event(mp_payment_id: str) -> None:
     mp_preference_id = payment.get("preference_id", "")
     status_detail = payment.get("status_detail", "")
 
-    logger.info(
-        "MP payment %s: status=%s, preference=%s", mp_payment_id, mp_status, mp_preference_id
-    )
+    logger.info("MP payment %s: status=%s, preference=%s", mp_payment_id, mp_status, mp_preference_id)
 
     our_status = STATUS_MAP.get(mp_status, "PENDING")
 
@@ -214,11 +231,18 @@ def _process_payment_event(mp_payment_id: str) -> None:
         purchase = _find_purchase_by_mp_payment_id(mp_payment_id)
 
     if not purchase:
-        logger.warning(
-            "No purchase found for mp_preference_id=%s, mp_payment_id=%s",
-            mp_preference_id,
-            mp_payment_id,
-        )
+        # Last resort: try to extract email/planType from external_reference (email|plan_type)
+        ext_ref = payment.get("external_reference", "")
+        if "|" in ext_ref and our_status == "COMPLETED":
+            email_ref, plan_ref = ext_ref.split("|", 1)
+            logger.info("No purchase record found — using external_reference email=%s plan=%s", email_ref, plan_ref)
+            _upgrade_user_plan(email_ref.strip(), plan_ref.strip())
+        else:
+            logger.warning(
+                "No purchase found for mp_preference_id=%s, mp_payment_id=%s",
+                mp_preference_id,
+                mp_payment_id,
+            )
         return
 
     _update_purchase_status(
@@ -228,25 +252,89 @@ def _process_payment_event(mp_payment_id: str) -> None:
         reason=status_detail,
     )
 
+    # When approved, upgrade the user's plan
+    if our_status == "COMPLETED":
+        email = purchase.get("email", "")
+        plan_type = purchase.get("planType", "")
+        _upgrade_user_plan(email, plan_type)
+
+
+# ──────────────────────────────────────────────
+# Merchant order processing (IPN merchant_order topic)
+# ──────────────────────────────────────────────
+
+
+def _process_merchant_order(merchant_order_id: str) -> None:
+    """Fetch merchant order from MP and process each associated payment."""
+    mp = _get_mp()
+    import urllib.request as _ureq
+
+    access_token = MP_ACCESS_TOKEN
+    url = f"https://api.mercadopago.com/merchant_orders/{merchant_order_id}"
+    req = _ureq.Request(
+        url,
+        headers={"Authorization": f"Bearer {access_token}"},
+        method="GET",
+    )
+    try:
+        with _ureq.urlopen(req, timeout=10) as resp:
+            order = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        logger.error("Failed to fetch merchant_order %s: %s", merchant_order_id, exc)
+        return
+
+    payments = order.get("payments", [])
+    logger.info("Merchant order %s has %d payment(s)", merchant_order_id, len(payments))
+
+    for pay in payments:
+        pay_id = str(pay.get("id", ""))
+        if pay_id:
+            logger.info("Processing payment %s from merchant_order %s", pay_id, merchant_order_id)
+            _process_payment_event(pay_id)
+
 
 # ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
 
+
 def handler(event: dict, context) -> dict:
-    """AWS Lambda handler for MercadoPago webhooks."""
-    # Parse body
+    """AWS Lambda handler for MercadoPago notifications.
+
+    Handles two notification formats:
+    1. Webhooks API (JSON body): {"action": "payment.updated", "data": {"id": "123"}}
+    2. IPN via notification_url (query params): ?id=123&topic=payment|merchant_order
+       IPN notifications skip signature validation (no x-signature header).
+    """
+    logger.info("Webhook raw event keys: %s", list(event.keys()))
+
+    is_ipn = False  # track whether this is IPN (skips signature check)
+
+    # ── Parse body (Webhooks API format) ──────────────
     try:
         raw_body = event.get("body") or "{}"
         body: dict = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
     except (json.JSONDecodeError, TypeError):
-        return _err("Invalid JSON body.", 400)
+        body = {}
 
     action = body.get("action", "")
     data = body.get("data", {})
     mp_payment_id = str(data.get("id", ""))
+    ipn_topic = ""
 
-    logger.info("Webhook received: action=%s, payment_id=%s", action, mp_payment_id)
+    # ── IPN format (query params from notification_url) ──
+    # MP sends: POST ?id=<id>&topic=payment|merchant_order
+    if not mp_payment_id:
+        qs = event.get("queryStringParameters") or {}
+        ipn_id = str(qs.get("id", "") or qs.get("data.id", ""))
+        ipn_topic = qs.get("topic", "") or qs.get("type", "")
+        if ipn_id and ipn_topic in ("payment", "merchant_order"):
+            mp_payment_id = ipn_id
+            action = "payment.updated"
+            is_ipn = True
+            logger.info("IPN notification: id=%s topic=%s", ipn_id, ipn_topic)
+
+    logger.info("Webhook received: action=%s, payment_id=%s is_ipn=%s", action, mp_payment_id, is_ipn)
 
     # Only process payment events
     if action not in ("payment.created", "payment.updated"):
@@ -256,9 +344,18 @@ def handler(event: dict, context) -> dict:
     if not mp_payment_id:
         return _err("Missing data.id in webhook payload.", 400)
 
-    # Validate signature
-    if not _validate_signature(event, mp_payment_id):
+    # Signature validation — skip for IPN (no x-signature header in IPN)
+    if not is_ipn and not _validate_signature(event, mp_payment_id):
         return _err("Invalid webhook signature.", 401)
+
+    # For merchant_order IPN: fetch the order and process its payments
+    if ipn_topic == "merchant_order":
+        try:
+            _process_merchant_order(mp_payment_id)
+        except Exception as exc:
+            logger.error("Error processing merchant_order %s: %s", mp_payment_id, exc)
+            return _err("Internal server error.", 500)
+        return _ok("processed")
 
     # Process the payment event
     try:

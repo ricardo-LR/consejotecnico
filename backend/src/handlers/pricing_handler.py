@@ -43,6 +43,7 @@ def _err(message: str, status: int = 400) -> dict:
 # Action
 # ──────────────────────────────────────────────
 
+
 def get_pricing_tiers() -> dict:
     """
     Return all pricing tiers with MXN prices.
@@ -87,6 +88,7 @@ def get_pricing_tiers() -> dict:
 # ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
+
 
 def handler(event: dict, context) -> dict:
     """AWS Lambda handler."""
