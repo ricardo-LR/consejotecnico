@@ -1,6 +1,6 @@
 """
-Checkout API handler para Mercado Pago.
-Recibe card token del frontend, crea pago directo via POST /v1/payments.
+Checkout handler para Mercado Pago (Checkout Bricks + Checkout API).
+Soporta tarjeta (token), cuenta MP, OXXO, transferencia bancaria, etc.
 Lambda handler: purchase_handler.handler
 """
 import json
@@ -71,17 +71,18 @@ def _upgrade_plan(email: str, plan_type: str) -> None:
         print(f"[PURCHASE] WARNING: DynamoDB plan update failed: {e}")
 
 
-def _save_purchase(email: str, plan_type: str, payment_id: str, status: str) -> None:
+def _save_purchase(email: str, plan_type: str, payment_id: str, status: str, method: str = "") -> None:
     try:
         now = datetime.now(timezone.utc).isoformat()
         _get_db().Table(DYNAMODB_TABLE_PURCHASES).put_item(Item={
-            "purchaseId":  str(uuid.uuid4()),
-            "email":       email,
-            "planType":    plan_type,
-            "mpPaymentId": str(payment_id),
-            "status":      status.upper(),
-            "createdAt":   now,
-            "updatedAt":   now,
+            "purchaseId":    str(uuid.uuid4()),
+            "email":         email,
+            "planType":      plan_type,
+            "mpPaymentId":   str(payment_id),
+            "status":        status.upper(),
+            "paymentMethod": method,
+            "createdAt":     now,
+            "updatedAt":     now,
         })
     except Exception as e:
         print(f"[PURCHASE] WARNING: DynamoDB save failed: {e}")
@@ -98,27 +99,31 @@ def handler(event, context):
     except (json.JSONDecodeError, TypeError):
         return _err("Body JSON inválido", 400)
 
+    # ── Extraer campos comunes ────────────────────────────────────────────────
     token             = (body.get("token") or "").strip()
-    payment_method_id = (body.get("payment_method_id") or "master").strip()
+    payment_method_id = (body.get("payment_method_id") or "").strip()
+    payment_method    = (body.get("payment_method") or "").strip()   # Bricks: 'creditCard', 'ticket', etc.
     issuer_id         = body.get("issuer_id")
     installments      = int(body.get("installments") or 1)
-    description       = body.get("description") or "ConsejotecnicoCMS"
+    description       = body.get("description") or ""
     payer             = body.get("payer") or {}
     plan_type         = (body.get("plan_type") or "grado").strip()
-    email             = (body.get("email") or payer.get("email") or "").strip()
 
-    print(f"[PURCHASE] token={token[:10]}... email={email} plan={plan_type}")
-
-    if not token:
-        return _err("Se requiere token de tarjeta", 400)
+    # email del usuario logueado (quién compra el plan) — nunca del payer
+    email = (body.get("email") or "").strip()
     if not email:
-        return _err("Se requiere email", 400)
+        email = (payer.get("email") or "").strip()
+
+    print(f"[PURCHASE] method={payment_method} token={'YES' if token else 'NO'} email={email} plan={plan_type}")
+
+    if not email:
+        return _err("Se requiere email del usuario", 400)
     if plan_type not in PRECIOS:
         return _err(f"Plan desconocido: {plan_type}", 400)
 
-    # Precio siempre del servidor — nunca confiar en el cliente
+    # Precio siempre del servidor
     amount = float(PRECIOS[plan_type])
-    if not description or description == "ConsejotecnicoCMS":
+    if not description:
         description = NOMBRES[plan_type]
 
     access_token = (
@@ -130,19 +135,36 @@ def handler(event, context):
 
     print(f"[PURCHASE] MP token prefix: {access_token[:15]}... amount={amount}")
 
-    payment_data = {
-        "token":              token,
-        "payment_method_id":  payment_method_id,
+    # ── Construir payment_data ────────────────────────────────────────────────
+    payment_data: dict = {
         "transaction_amount": amount,
-        "installments":       installments,
         "description":        description,
         "payer":              payer,
         "external_reference": f"{email}|{plan_type}|{uuid.uuid4().hex[:8]}",
         "metadata":           {"email": email, "plan_type": plan_type},
         "notification_url":   WEBHOOK_URL,
     }
-    if issuer_id:
-        payment_data["issuer_id"] = int(issuer_id)
+
+    if token:
+        # Pago con tarjeta (Checkout API / Bricks tarjeta)
+        payment_data["token"]             = token
+        payment_data["payment_method_id"] = payment_method_id or "master"
+        payment_data["installments"]      = installments
+        if issuer_id:
+            payment_data["issuer_id"] = int(issuer_id)
+
+    elif payment_method_id:
+        # Pago sin token: OXXO, transferencia, cuenta MP, etc.
+        payment_data["payment_method_id"] = payment_method_id
+
+        # Fecha de vencimiento para tickets (OXXO): 3 días
+        if payment_method_id in ("oxxo", "paycash", "bancomer"):
+            from datetime import timedelta
+            expiry = datetime.now(timezone.utc) + timedelta(days=3)
+            payment_data["date_of_expiration"] = expiry.strftime("%Y-%m-%dT%H:%M:%S.000-04:00")
+
+    else:
+        return _err("Se requiere token de tarjeta o método de pago", 400)
 
     print(f"[PURCHASE] Creando pago MP: {json.dumps(payment_data)}")
 
@@ -168,25 +190,33 @@ def handler(event, context):
         print(f"[PURCHASE] MP request exception: {e}")
         return _err(str(e), 502)
 
-    mp_status = result.get("status", "")
-    detail    = result.get("status_detail", "")
+    mp_status  = result.get("status", "")
+    detail     = result.get("status_detail", "")
     payment_id = result.get("id", "")
 
     print(f"[PURCHASE] Resultado: status={mp_status} detail={detail} id={payment_id}")
 
-    _save_purchase(email, plan_type, payment_id, mp_status)
+    _save_purchase(email, plan_type, payment_id, mp_status, payment_method or payment_method_id)
 
     if mp_status == "approved":
         _upgrade_plan(email, plan_type)
 
-    message = (
+    message_text = (
         "¡Pago aprobado!" if mp_status == "approved"
         else f"Pago {mp_status}: {detail}"
     )
+
+    # Para OXXO/ticket: incluir URL de pago al usuario
+    extra = {}
+    if mp_status in ("pending", "in_process"):
+        ticket_url = result.get("transaction_details", {}).get("external_resource_url")
+        if ticket_url:
+            extra["ticket_url"] = ticket_url
 
     return _ok({
         "status":        mp_status,
         "status_detail": detail,
         "id":            payment_id,
-        "message":       message,
+        "message":       message_text,
+        **extra,
     })
