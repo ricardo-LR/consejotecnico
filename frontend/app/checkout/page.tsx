@@ -1,310 +1,289 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { isLoggedIn, getUser, getAuthToken } from '@/lib/auth';
-import { PLANS } from '@/config/plans';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
+const MP_PUBLIC_KEY = process.env.NEXT_PUBLIC_MERCADOPAGO_KEY ?? 'TEST-c9279164-9470-4b2c-bd4c-d1ec1f3198cd';
+
+const PLANES: Record<string, { nombre: string; precio: number }> = {
+  grado: { nombre: 'Plan Por Grado - ConsejotecnicoCMS', precio: 499 },
+  pro:   { nombre: 'Plan Pro - ConsejotecnicoCMS',       precio: 999 },
+};
+
+declare global {
+  interface Window { MercadoPago: any }
+}
 
 function CheckoutContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const params  = useSearchParams();
+  const planId  = params.get('plan') || 'grado';
+  const plan    = PLANES[planId] ?? PLANES.grado;
 
-  const planId = searchParams.get('plan') || 'grado';
-
-  const [loggedIn, setLoggedIn]               = useState(false);
-  const [user, setUser]                       = useState<{ email: string; nombre?: string; plan_type?: string } | null>(null);
-  const [loading, setLoading]                 = useState(true);
-  const [error, setError]                     = useState('');
-  const [selectedPlan, setSelectedPlan]       = useState('');
-  const [selectedSuboption, setSelectedSuboption] = useState('');
-  const [processing, setProcessing]           = useState(false);
+  const [status, setStatus]   = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [mpReady, setMpReady] = useState(false);
+  const userRef               = useRef<{ email: string; nombre?: string } | null>(null);
 
   useEffect(() => {
-    console.log('[CHECKOUT] ════════════════════════════════════════');
-    console.log('[CHECKOUT] Iniciando checkout...');
-    console.log('[CHECKOUT] ════════════════════════════════════════');
-    console.log('[CHECKOUT] Plan seleccionado:', planId);
-
-    // VERIFICACIÓN CRÍTICA: Revisar sesión
-    const token    = localStorage.getItem('token');
-    const userStr  = localStorage.getItem('user');
-    const planType = localStorage.getItem('plan_type');
-
-    console.log('[CHECKOUT] localStorage.token:', token   ? '✅ SI' : '❌ NO');
-    console.log('[CHECKOUT] localStorage.user:', userStr  ? '✅ SI' : '❌ NO');
-    console.log('[CHECKOUT] localStorage.plan_type:', planType ? `✅ ${planType}` : '❌ NO');
-
-    const logged = isLoggedIn();
-    console.log('[CHECKOUT] isLoggedIn():', logged ? '✅ SI' : '❌ NO');
-
-    if (!logged) {
-      console.log('[CHECKOUT] ❌ No hay sesión - Redirigiendo a login');
-      setError('Debes iniciar sesión para comprar');
-      setLoading(false);
-      setTimeout(() => {
-        router.push(`/auth/login?redirect=/checkout?plan=${planId}`);
-      }, 2000);
+    if (!isLoggedIn()) {
+      window.location.href = `/auth/login?redirect=/checkout?plan=${planId}`;
       return;
     }
+    userRef.current = getUser() as { email: string; nombre?: string } | null;
 
-    const userData = getUser();
-    console.log('[CHECKOUT] ✅ Usuario encontrado:', userData?.email);
-    console.log('[CHECKOUT] Usuario data completo:', userData);
+    const script  = document.createElement('script');
+    script.src    = 'https://sdk.mercadopago.com/js/v2';
+    script.onload = initMP;
+    document.body.appendChild(script);
 
-    setLoggedIn(true);
-    setUser(userData as { email: string; nombre?: string; plan_type?: string });
-    setSelectedPlan(planId);
-    setLoading(false);
-  }, [planId, router]);
+    return () => {
+      try { document.body.removeChild(script); } catch {}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleProceedToPayment = async () => {
-    try {
-      console.log('[CHECKOUT] ════════════════════════════════════════');
-      console.log('[CHECKOUT] 💳 Iniciando pago...');
-      console.log('[CHECKOUT] ════════════════════════════════════════');
+  function initMP() {
+    const mp = new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'es-MX' });
 
-      setProcessing(true);
-
-      const email    = user?.email ?? '';
-      const planType = localStorage.getItem('plan_type') || 'gratuito';
-      const token    = getAuthToken();
-      const plan     = PLANS[selectedPlan.toUpperCase() as keyof typeof PLANS];
-
-      console.log('[CHECKOUT] 📊 Datos para Mercado Pago:');
-      console.log('[CHECKOUT]   - Email:', email);
-      console.log('[CHECKOUT]   - Plan Type (actual):', planType);
-      console.log('[CHECKOUT]   - Plan ID:', selectedPlan);
-      console.log('[CHECKOUT]   - Plan Name:', plan.name);
-      console.log('[CHECKOUT]   - Plan Price:', plan.price);
-      console.log('[CHECKOUT]   - Period:', plan.period);
-      console.log('[CHECKOUT]   - Suboption:', selectedSuboption || 'N/A');
-      console.log('[CHECKOUT]   - Token:', token?.substring(0, 30) + '...');
-
-      if (!email) throw new Error('Email del usuario no encontrado');
-
-      const body: Record<string, string> = {
-        email,
-        planeacion_id: 'subscription',
-        plan_type:     selectedPlan,
-      };
-      if (selectedSuboption) body.suboption = selectedSuboption;
-
-      console.log('[CHECKOUT] 📦 Body a enviar:', body);
-      console.log('[CHECKOUT] 📤 Enviando a backend:', `${API_URL}/purchase`);
-
-      const response = await fetch(`${API_URL}/purchase`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    const cardForm = mp.cardForm({
+      amount: String(plan.precio),
+      iframe: true,
+      form: {
+        id:                   'form-checkout',
+        cardNumber:           { id: 'form-checkout__cardNumber',           placeholder: 'Número de tarjeta' },
+        expirationDate:       { id: 'form-checkout__expirationDate',       placeholder: 'MM/YY' },
+        securityCode:         { id: 'form-checkout__securityCode',         placeholder: 'CVV' },
+        cardholderName:       { id: 'form-checkout__cardholderName',       placeholder: 'Titular (ej: APRO)' },
+        issuer:               { id: 'form-checkout__issuer',               placeholder: 'Banco emisor' },
+        installments:         { id: 'form-checkout__installments',         placeholder: 'Cuotas' },
+        identificationType:   { id: 'form-checkout__identificationType' },
+        identificationNumber: { id: 'form-checkout__identificationNumber', placeholder: 'RFC / CURP' },
+        cardholderEmail:      { id: 'form-checkout__cardholderEmail',      placeholder: 'Email del titular' },
+      },
+      callbacks: {
+        onFormMounted: (err: any) => {
+          if (err) { console.error('[MP] Form mount error:', err); return; }
+          setMpReady(true);
+          // Pre-rellenar email del usuario
+          const el = document.getElementById('form-checkout__cardholderEmail') as HTMLInputElement | null;
+          if (el && userRef.current?.email) el.value = userRef.current.email;
         },
-        body: JSON.stringify(body),
-      });
 
-      console.log('[CHECKOUT] Response status:', response.status);
+        onSubmit: async (event: any) => {
+          event.preventDefault();
+          setStatus('loading');
+          setMessage('');
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[CHECKOUT] ❌ Error:', errorData);
-        throw new Error(errorData.error || 'Error creando preferencia');
-      }
+          try {
+            const {
+              token,
+              paymentMethodId:      payment_method_id,
+              issuerId:             issuer_id,
+              installments,
+              cardholderEmail,
+              identificationNumber,
+              identificationType,
+            } = cardForm.getCardFormData();
 
-      const data = await response.json();
-      console.log('[CHECKOUT] ✅ Preferencia creada:', data);
+            const userEmail = userRef.current?.email || cardholderEmail || '';
 
-      // Backend siempre elige la URL correcta (sandbox o prod) en init_point
-      const mpUrl = data.init_point || data.checkout_url;
-      console.log('[CHECKOUT] is_sandbox:', data.is_sandbox);
-      if (mpUrl) {
-        console.log('[CHECKOUT] 🔗 Redirigiendo a Mercado Pago:', mpUrl);
-        window.location.href = mpUrl;
-      } else {
-        throw new Error('No se recibió URL de pago de MercadoPago');
-      }
-    } catch (err) {
-      console.error('[CHECKOUT] ❌ Error:', err);
-      setError(`Error al procesar el pago: ${err instanceof Error ? err.message : 'desconocido'}`);
-      setProcessing(false);
-    }
-  };
+            const body = {
+              token,
+              payment_method_id,
+              issuer_id,
+              transaction_amount:  plan.precio,
+              installments:        Number(installments),
+              description:         plan.nombre,
+              plan_type:           planId,
+              email:               userEmail,
+              payer: {
+                email:          cardholderEmail || userEmail,
+                identification: {
+                  type:   identificationType   || 'RFC',
+                  number: identificationNumber || 'XAXX010101000',
+                },
+              },
+            };
 
-  // ── Loading state ────────────────────────────────────────────────────────
-  if (loading) {
+            console.log('[CHECKOUT] Enviando:', JSON.stringify(body));
+
+            const res  = await fetch(`${API}/purchase`, {
+              method:  'POST',
+              headers: {
+                'Content-Type':  'application/json',
+                'Authorization': `Bearer ${getAuthToken()}`,
+              },
+              body: JSON.stringify(body),
+            });
+
+            const data = await res.json();
+            console.log('[CHECKOUT] Respuesta:', data);
+
+            if (data.status === 'approved') {
+              setStatus('success');
+              setTimeout(() => { window.location.href = '/checkout/success'; }, 1500);
+            } else if (data.status === 'in_process' || data.status === 'pending') {
+              window.location.href = '/checkout/pending';
+            } else {
+              setStatus('error');
+              setMessage(data.message || data.error || `Pago rechazado: ${data.status_detail}`);
+            }
+          } catch (err: any) {
+            setStatus('error');
+            setMessage(err.message || 'Error de conexión');
+          }
+        },
+
+        onError: (errs: any) => {
+          console.error('[MP] Validation errors:', errs);
+        },
+      },
+    });
+  }
+
+  // ── Aprobado ─────────────────────────────────────────────────────────────
+  if (status === 'success') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Verificando sesión...</p>
+      <div className="min-h-screen flex items-center justify-center bg-green-50">
+        <div className="text-center p-8">
+          <div className="text-6xl mb-4">✅</div>
+          <h1 className="text-2xl font-bold text-green-700">¡Pago aprobado!</h1>
+          <p className="text-gray-500 mt-2">Redirigiendo...</p>
         </div>
       </div>
     );
   }
 
-  // ── Not logged in ────────────────────────────────────────────────────────
-  if (!loggedIn || !user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center max-w-md">
-          <p className="text-red-600 font-bold text-lg mb-4">⚠️ No autenticado</p>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <p className="text-sm text-gray-500 mb-6">Redirigiendo a login en 2 segundos...</p>
-          <Link
-            href={`/auth/login?redirect=/checkout?plan=${planId}`}
-            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
-          >
-            Ir a Login Ahora
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const plan = PLANS[selectedPlan.toUpperCase() as keyof typeof PLANS] ?? PLANS['GRADO'];
-  const priceDisplay = plan.price === 0 ? 'Gratis' : `$${plan.price.toLocaleString('es-MX')}`;
-
+  // ── Formulario ───────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
+
         {/* Header */}
-        <div className="mb-8">
-          <Link href="/maestro/dashboard" className="text-blue-600 hover:text-blue-700 mb-6 inline-block text-sm">
+        <div className="mb-2">
+          <Link href="/maestro/dashboard" className="text-blue-500 text-sm hover:underline">
             ← Volver al Dashboard
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
+          <h1 className="text-2xl font-bold text-gray-800 mt-2">Completar pago</h1>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-8 text-sm">
-            {error}
+        {/* Resumen del plan */}
+        <div className="bg-blue-50 rounded-lg p-4 mb-5">
+          <p className="font-semibold text-blue-800">{plan.nombre}</p>
+          <p className="text-3xl font-bold text-blue-900">
+            ${plan.precio}{' '}
+            <span className="text-sm font-normal text-blue-700">MXN / año</span>
+          </p>
+        </div>
+
+        {/* Mensaje de error */}
+        {message && (
+          <div className={`rounded-lg p-3 mb-4 text-sm border ${
+            status === 'error'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-blue-50 text-blue-700 border-blue-200'
+          }`}>
+            {message}
           </div>
         )}
 
-        {/* User Info */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex items-start justify-between">
+        {/* Formulario MP */}
+        <form id="form-checkout" className="space-y-4">
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Número de tarjeta
+            </label>
+            <div id="form-checkout__cardNumber"
+              className="border border-gray-300 rounded-lg p-3 h-12 bg-white" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Usuario Autenticado</h3>
-              <p className="text-gray-600 mt-1 text-sm">Email: {user.email}</p>
-              <p className="text-gray-600 text-sm">Nombre: {user.nombre || 'Sin nombre'}</p>
-            </div>
-            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold shrink-0">
-              ✅ Sesión activa
-            </span>
-          </div>
-        </div>
-
-        {/* Plan Summary */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Resumen del Plan</h2>
-
-          <div className="border-b border-gray-200 pb-4 mb-4">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{plan.name}</h3>
-                <p className="text-gray-600 mt-1 text-sm">{plan.description}</p>
-              </div>
-              <div className="text-right ml-4">
-                <p className="text-3xl font-bold text-gray-900">{priceDisplay}</p>
-                <p className="text-gray-600 text-sm">/ {plan.period}</p>
-              </div>
-            </div>
-
-            <ul className="space-y-2">
-              {plan.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                  <span className="text-green-600 shrink-0">✓</span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Suboptions for Pro */}
-          {plan.suboptions && (
-            <div className="mb-4">
-              <h4 className="font-semibold text-gray-900 mb-3 text-sm">Elige tu versión:</h4>
-              <div className="space-y-2">
-                {plan.suboptions.map((option) => (
-                  <label
-                    key={option.id}
-                    className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedSuboption === option.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="suboption"
-                      value={option.id}
-                      checked={selectedSuboption === option.id}
-                      onChange={(e) => setSelectedSuboption(e.target.value)}
-                      className="mt-0.5 mr-3 accent-blue-600"
-                    />
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">{option.name}</p>
-                      <p className="text-xs text-gray-600">{option.description}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Total */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-2 text-sm">
-              <span className="text-gray-700">Subtotal</span>
-              <span className="font-semibold text-gray-900">{priceDisplay}</span>
-            </div>
-            <div className="flex justify-between items-center border-t border-gray-200 pt-2">
-              <span className="font-bold text-gray-900 text-sm">Total ({plan.period})</span>
-              <span className="text-2xl font-bold text-gray-900">{priceDisplay}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Payment Method */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Método de Pago</h2>
-          <div className="flex items-center p-4 border border-blue-300 bg-blue-50 rounded-lg">
-            <div className="w-12 h-8 bg-blue-600 rounded mr-4 flex items-center justify-center text-white text-sm font-bold shrink-0">
-              MP
+              <label className="block text-sm font-medium text-gray-700 mb-1">Vencimiento</label>
+              <div id="form-checkout__expirationDate"
+                className="border border-gray-300 rounded-lg p-3 h-12 bg-white" />
             </div>
             <div>
-              <p className="font-semibold text-gray-900 text-sm">Mercado Pago</p>
-              <p className="text-xs text-gray-600">Tarjeta de crédito, débito o transferencia · Sandbox habilitado</p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">CVV</label>
+              <div id="form-checkout__securityCode"
+                className="border border-gray-300 rounded-lg p-3 h-12 bg-white" />
             </div>
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex gap-4">
-          <Link
-            href="/maestro/dashboard"
-            className="flex-1 px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 text-center text-sm"
-          >
-            Cancelar
-          </Link>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nombre del titular
+            </label>
+            <input
+              type="text"
+              id="form-checkout__cardholderName"
+              placeholder="Como aparece en la tarjeta (ej: APRO)"
+              className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Banco emisor</label>
+            <select id="form-checkout__issuer"
+              className="w-full border border-gray-300 rounded-lg p-3 text-gray-600" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cuotas</label>
+            <select id="form-checkout__installments"
+              className="w-full border border-gray-300 rounded-lg p-3" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo ID</label>
+              <select id="form-checkout__identificationType"
+                className="w-full border border-gray-300 rounded-lg p-3" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Número ID</label>
+              <input
+                type="text"
+                id="form-checkout__identificationNumber"
+                placeholder="RFC / CURP"
+                className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email del titular
+            </label>
+            <input
+              type="email"
+              id="form-checkout__cardholderEmail"
+              placeholder="Email"
+              className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+
           <button
-            onClick={handleProceedToPayment}
-            disabled={processing || (!!plan.suboptions && !selectedSuboption)}
-            className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            type="submit"
+            id="form-checkout__submit"
+            disabled={!mpReady || status === 'loading'}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed
+                       text-white font-bold py-4 rounded-xl transition-colors text-lg"
           >
-            {processing
+            {status === 'loading'
               ? '⏳ Procesando...'
-              : plan.suboptions && !selectedSuboption
-              ? 'Elige tu versión primero'
-              : '💳 Proceder al Pago'}
+              : !mpReady
+              ? '⏳ Cargando formulario...'
+              : `💳 Pagar $${plan.precio} MXN`}
           </button>
-        </div>
+        </form>
 
-        <p className="text-center text-xs text-gray-500 mt-6">
-          Al continuar, aceptas nuestros términos de servicio y política de privacidad.
+        <p className="text-xs text-gray-400 text-center mt-4">
+          🔒 Pago seguro procesado por Mercado Pago
         </p>
       </div>
     </div>
