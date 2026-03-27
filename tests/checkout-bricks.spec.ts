@@ -73,91 +73,166 @@ test('Checkout Bricks - pago con tarjeta', async ({ page }) => {
 
   await shot('02-brick-opciones');
 
+  // ── SELECCIONAR TARJETA DE CRÉDITO ─────────────────────────────────────────
+  console.log('\n3️⃣  Seleccionando "Tarjeta de crédito"...');
+
+  // The Brick renders a method picker; click the credit card option
+  const creditCardSelectors = [
+    'text=Tarjeta de crédito',
+    'label:has-text("Tarjeta de crédito")',
+    '[data-testid="credit_card"]',
+    'input[value="credit_card"]',
+  ];
+  let methodSelected = false;
+  for (const sel of creditCardSelectors) {
+    const el = page.locator(sel).first();
+    if (await el.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await el.click();
+      methodSelected = true;
+      console.log(`✅ Seleccionado via: ${sel}`);
+      break;
+    }
+    // Also try inside all frames
+    for (const frame of page.frames()) {
+      const fel = frame.locator(sel).first();
+      if (await fel.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await fel.click();
+        methodSelected = true;
+        console.log(`✅ Seleccionado (frame) via: ${sel}`);
+        break;
+      }
+    }
+    if (methodSelected) break;
+  }
+  console.log(`Método seleccionado: ${methodSelected ? '✅' : '⚠️ (puede ser auto-seleccionado)'}`);
+
+  // Wait for card input iframes to appear after method selection
+  await page.waitForTimeout(3000);
+  await shot('03-metodo-seleccionado');
+
+  // Log frames now (should have card input iframes)
+  const framesAfter = page.frames();
+  console.log(`\nFrames después de seleccionar (${framesAfter.length}):`);
+  for (const f of framesAfter) {
+    if (f.url() && !f.url().startsWith('about:')) {
+      console.log(`  ${f.url().substring(0, 90)}`);
+    }
+  }
+
   // ── LLENAR TARJETA ─────────────────────────────────────────────────────────
-  console.log('\n3️⃣  Llenando datos de tarjeta...');
+  // The Brick renders 3 secure-fields.mercadopago.com iframes (card, expiry, CVV).
+  // Target them by URL pattern in order — they have no meaningful placeholders.
+  console.log('\n4️⃣  Llenando datos de tarjeta...');
 
+  const secureFrames = page.frames().filter((f) => f.url().includes('secure-fields.mercadopago.com'));
+  console.log(`secure-fields iframes: ${secureFrames.length}`);
+
+  // iframe 0 = card number, 1 = expiry, 2 = CVV
   let cardFilled = false;
-  for (const frame of page.frames()) {
-    const inputs = await frame.locator('input').all();
-    for (const inp of inputs) {
-      const ph    = await inp.getAttribute('placeholder').catch(() => '');
-      const label = await inp.getAttribute('aria-label').catch(() => '');
-      if (ph?.match(/número|tarjeta|1234/i) || label?.match(/card.?number/i)) {
-        await inp.click();
-        await page.keyboard.type('5474925432670366', { delay: 80 });
-        await page.waitForTimeout(1500);
-        const val = await inp.inputValue().catch(() => '');
-        console.log(`✅ Número tarjeta: "${val.substring(0, 8)}..."`);
-        cardFilled = true;
-        break;
-      }
-    }
-    if (cardFilled) break;
-  }
+  let expFilled  = false;
+  let cvvFilled  = false;
 
-  let expFilled = false;
-  for (const frame of page.frames()) {
-    const inputs = await frame.locator('input').all();
-    for (const inp of inputs) {
-      const ph = await inp.getAttribute('placeholder').catch(() => '');
-      if (ph?.match(/MM|venc|fecha/i)) {
-        await inp.click();
-        await page.keyboard.type('1130', { delay: 100 });
-        console.log('✅ Vencimiento ingresado');
-        expFilled = true;
-        break;
-      }
-    }
-    if (expFilled) break;
-  }
+  // Use page.frameLocator() with nth-of-type to target each secure-fields iframe
+  // by DOM position inside the brick container. This avoids cross-origin isVisible()
+  // issues since frameLocator re-queries on every access.
+  const brickIframes = page.locator('#payment-brick-container iframe[src*="secure-fields"]');
+  const iframeCount  = await brickIframes.count().catch(() => 0);
+  console.log(`secure-fields iframes via locator: ${iframeCount}`);
 
-  let cvvFilled = false;
-  for (const frame of page.frames()) {
-    const inputs = await frame.locator('input').all();
-    for (const inp of inputs) {
-      const ph = await inp.getAttribute('placeholder').catch(() => '');
-      if (ph?.match(/CVV|CVC|segur/i)) {
-        await inp.click();
-        await page.keyboard.type('123', { delay: 100 });
-        console.log('✅ CVV ingresado');
-        cvvFilled = true;
-        break;
+  // Helper: fill an input inside the nth secure-fields iframe
+  async function fillSecureField(index: number, value: string, label: string): Promise<boolean> {
+    try {
+      const frameLocator = page.frameLocator(`#payment-brick-container iframe[src*="secure-fields"]:nth-of-type(${index + 1})`);
+      const inp = frameLocator.locator('input').first();
+      await inp.click({ timeout: 5000 });
+      await inp.pressSequentially(value, { delay: 80 });
+      await page.waitForTimeout(500);
+      const val = await inp.inputValue().catch(() => '?');
+      console.log(`✅ ${label}: "${val.substring(0, 12)}"`);
+      return true;
+    } catch (err: any) {
+      // Fallback: try via page.frames() without isVisible check
+      const frames = page.frames().filter((f) => f.url().includes('secure-fields.mercadopago.com'));
+      if (frames.length > index) {
+        try {
+          const inp = frames[index].locator('input').first();
+          await inp.click({ timeout: 3000, force: true });
+          await inp.pressSequentially(value, { delay: 80 });
+          await page.waitForTimeout(500);
+          const val = await inp.inputValue().catch(() => '?');
+          console.log(`✅ ${label} (fallback): "${val.substring(0, 12)}"`);
+          return true;
+        } catch (e2: any) {
+          console.log(`⚠️  ${label} fallback failed: ${e2.message?.substring(0, 80)}`);
+        }
       }
-    }
-    if (cvvFilled) break;
-  }
-
-  // Nombre del titular
-  for (const frame of page.frames()) {
-    const inputs = await frame.locator('input').all();
-    for (const inp of inputs) {
-      const ph = await inp.getAttribute('placeholder').catch(() => '');
-      if (ph?.match(/nombre|titular/i)) {
-        await inp.fill('APRO');
-        console.log('✅ Nombre: APRO');
-        break;
-      }
+      console.log(`⚠️  ${label} not filled: ${err.message?.substring(0, 80)}`);
+      return false;
     }
   }
 
-  // Email del pagador (requerido por el Brick)
-  for (const frame of page.frames()) {
-    const inputs = await frame.locator('input[type="email"]').all();
-    for (const inp of inputs) {
-      const val = await inp.inputValue().catch(() => '');
-      if (!val || val === '') {
-        await inp.fill(BUYER_EMAIL);
-        console.log(`✅ Email pagador: ${BUYER_EMAIL}`);
-        break;
-      }
+  cardFilled = await fillSecureField(0, '5474925432670366', 'Número tarjeta');
+  await page.waitForTimeout(2000); // wait for card brand detection + potential iframe refresh
+
+  // After typing card number the focus auto-advances to expiry.
+  // Use Tab + type to reach expiry and CVV without needing to click their iframes.
+  // pressSequentially works on whichever element currently has focus.
+  try {
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(300);
+    await page.keyboard.type('1130', { delay: 100 });
+    await page.waitForTimeout(500);
+    console.log('✅ Vencimiento (Tab+type)');
+    expFilled = true;
+  } catch (e: any) {
+    console.log(`⚠️  Vencimiento Tab failed: ${e.message?.substring(0, 60)}`);
+    expFilled = await fillSecureField(1, '1130', 'Vencimiento');
+  }
+
+  try {
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(300);
+    await page.keyboard.type('123', { delay: 100 });
+    await page.waitForTimeout(500);
+    console.log('✅ CVV (Tab+type)');
+    cvvFilled = true;
+  } catch (e: any) {
+    console.log(`⚠️  CVV Tab failed: ${e.message?.substring(0, 60)}`);
+    cvvFilled = await fillSecureField(2, '123', 'CVV');
+  }
+
+  // Cardholder name — in main DOM (not iframe), placeholder is a sample name
+  let nameFilled = false;
+  const nameInputs = await page.locator('input:not([type="email"]):not([type="radio"]):not([type="checkbox"])').all();
+  for (const inp of nameInputs) {
+    const ph  = await inp.getAttribute('placeholder').catch(() => '');
+    const val = await inp.inputValue().catch(() => '');
+    // Brick uses a realistic example name as placeholder, e.g. "María Clara López Roldán"
+    if (ph && ph.includes(' ') && !val && !ph.match(/MM|CVV|@|\d{4}/)) {
+      await inp.fill('APRO');
+      console.log(`✅ Nombre: APRO`);
+      nameFilled = true;
+      break;
+    }
+  }
+  if (!nameFilled) console.log('⚠️  Campo nombre no encontrado en DOM principal');
+
+  // Email del pagador — required by Brick
+  const emailInputs = await page.locator('input[type="email"]').all();
+  for (const inp of emailInputs) {
+    const val = await inp.inputValue().catch(() => '');
+    if (!val) {
+      await inp.fill(BUYER_EMAIL);
+      console.log(`✅ Email pagador: ${BUYER_EMAIL}`);
+      break;
     }
   }
 
   await page.waitForTimeout(2000);
-  await shot('03-formulario-lleno');
+  await shot('04-formulario-lleno');
 
   // ── PAGAR ──────────────────────────────────────────────────────────────────
-  console.log('\n4️⃣  Pagando...');
+  console.log('\n5️⃣  Pagando...');
 
   const paySelectors = [
     'button:has-text("Pagar")',
@@ -208,10 +283,10 @@ test('Checkout Bricks - pago con tarjeta', async ({ page }) => {
   }
 
   await page.waitForTimeout(10000);
-  await shot('04-post-pago');
+  await shot('05-post-pago');
 
   // ── RESULTADO ──────────────────────────────────────────────────────────────
-  console.log('\n5️⃣  Verificando resultado...');
+  console.log('\n6️⃣  Verificando resultado...');
   const finalUrl  = page.url();
   const finalText = await page.innerText('body').catch(() => '');
 
@@ -227,7 +302,7 @@ test('Checkout Bricks - pago con tarjeta', async ({ page }) => {
   }
 
   // ── VERIFICAR DASHBOARD ────────────────────────────────────────────────────
-  console.log('\n6️⃣  Verificando plan en maestro dashboard...');
+  console.log('\n7️⃣  Verificando plan en maestro dashboard...');
   await page.waitForTimeout(2000);
   await page.goto(`${BASE}/maestro/dashboard`);
   await page.waitForLoadState('networkidle');
