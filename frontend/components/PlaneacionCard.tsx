@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 export interface Planeacion {
   id: string;
@@ -15,10 +18,23 @@ export interface Planeacion {
 
 interface PlaneacionCardProps {
   planeacion: Planeacion;
+  /** Override the plan type. If not provided, reads from localStorage. */
+  planType?: string;
 }
 
-export default function PlaneacionCard({ planeacion }: PlaneacionCardProps) {
-  const { id, title, description, subject, grade, price, rating, reviewCount, coverImage, isPurchased } = planeacion;
+export default function PlaneacionCard({ planeacion, planType: planTypeProp }: PlaneacionCardProps) {
+  const { id, title, description, subject, grade, price, rating, reviewCount, coverImage } = planeacion;
+
+  const [planType, setPlanType] = useState(planTypeProp ?? 'gratuito');
+
+  useEffect(() => {
+    if (!planTypeProp) {
+      setPlanType(localStorage.getItem('plan_type') ?? 'gratuito');
+    }
+  }, [planTypeProp]);
+
+  // Pro and Grado users have full access to all planeaciones
+  const hasAccess = planType === 'pro' || planType === 'grado';
 
   return (
     <article className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
@@ -64,27 +80,37 @@ export default function PlaneacionCard({ planeacion }: PlaneacionCardProps) {
 
         {/* Price + CTA */}
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-          <span className={`text-lg font-bold ${price === 0 ? 'text-green-600' : 'text-gray-900'}`}>
-            {price === 0 ? 'GRATIS' : `$${price} pesos`}
-          </span>
-          <Link
-            href={
-              isPurchased
-                ? `/catalog/${id}`
-                : price === 0
-                ? `/checkout?planeacion_id=${id}&plan_type=individual`
-                : `/checkout?planeacion_id=${id}&plan_type=individual`
-            }
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isPurchased
-                ? 'bg-green-600 text-white hover:bg-green-700'
-                : price === 0
-                ? 'bg-green-600 text-white hover:bg-green-700'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            {isPurchased ? 'Ver descarga' : price === 0 ? 'Descargar' : 'Comprar'}
-          </Link>
+          {hasAccess ? (
+            <>
+              <span className="text-sm text-green-700 font-medium">✓ Incluido en tu plan</span>
+              <Link
+                href={`/catalog/${id}`}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                ⬇️ Acceder
+              </Link>
+            </>
+          ) : (
+            <>
+              <span className={`text-lg font-bold ${price === 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                {price === 0 ? 'GRATIS' : `$${price} pesos`}
+              </span>
+              <Link
+                href={
+                  price === 0
+                    ? `/catalog/${id}`
+                    : `/checkout?planeacion_id=${id}&plan_type=individual&precio=${price}`
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  price === 0
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {price === 0 ? 'Descargar' : 'Comprar'}
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </article>
