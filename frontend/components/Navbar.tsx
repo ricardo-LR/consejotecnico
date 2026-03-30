@@ -3,7 +3,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { isLoggedIn, getUser, logout } from '@/lib/auth';
+import { isLoggedIn, getUser, getPlanType, logout } from '@/lib/auth';
+
+const PLAN_BADGE: Record<string, { label: string; color: string }> = {
+  gratuito: { label: 'Gratuito',  color: 'bg-gray-100 text-gray-600' },
+  grado:    { label: 'Por Grado', color: 'bg-blue-100 text-blue-700' },
+  pro:      { label: 'Pro',       color: 'bg-purple-100 text-purple-700' },
+};
 
 export default function Navbar() {
   const router = useRouter();
@@ -11,6 +17,7 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
+  const [planType, setPlanType] = useState('gratuito');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -20,6 +27,7 @@ export default function Navbar() {
     if (logged) {
       const user = getUser();
       setUserName(user?.nombre || user?.email || 'USER');
+      setPlanType(getPlanType() || 'gratuito');
     }
   }, []);
 
@@ -80,7 +88,12 @@ export default function Navbar() {
                   </button>
 
                   {showMenu && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                      <div className="px-4 py-2 border-b">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${(PLAN_BADGE[planType] ?? PLAN_BADGE.gratuito).color}`}>
+                          {(PLAN_BADGE[planType] ?? PLAN_BADGE.gratuito).label}
+                        </span>
+                      </div>
                       <Link
                         href="/dashboard"
                         onClick={() => setShowMenu(false)}

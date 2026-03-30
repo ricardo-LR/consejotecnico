@@ -17,6 +17,12 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [debugInfo, setDebugInfo] = useState('');
 
+  const PLAN_BADGE: Record<string, { label: string; color: string }> = {
+    gratuito: { label: 'Gratuito',  color: 'bg-gray-100 text-gray-600' },
+    grado:    { label: 'Por Grado', color: 'bg-blue-100 text-blue-700' },
+    pro:      { label: 'Pro',       color: 'bg-purple-100 text-purple-700' },
+  };
+
   useEffect(() => {
     console.log('[DASHBOARD] ════════════════════════════════════════');
     console.log('[DASHBOARD] Iniciando Dashboard');
@@ -169,6 +175,35 @@ export default function Dashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto p-8">
+        {/* Plan actual */}
+        {(() => {
+          const pt = user.plan_type ?? 'gratuito';
+          const badge = PLAN_BADGE[pt] ?? PLAN_BADGE.gratuito;
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Tu plan actual</p>
+                <p className="font-bold text-lg text-gray-800">
+                  {pt === 'gratuito' ? 'Plan Gratuito' : pt === 'grado' ? 'Plan Por Grado' : 'Plan Pro'}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${badge.color}`}>
+                  {badge.label}
+                </span>
+                {pt === 'gratuito' && (
+                  <a
+                    href="/checkout?plan=grado"
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+                  >
+                    Mejorar plan →
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-8 mb-8 text-white">
           <h2 className="text-2xl font-bold mb-2">📚 Mi Workspace</h2>
           <p className="mb-6 text-blue-100">Accede a tu espacio de trabajo</p>
