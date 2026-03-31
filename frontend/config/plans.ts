@@ -3,128 +3,106 @@
  * SIEMPRE usar estas constantes, nunca hardcodear precios
  */
 
-export interface SubOption {
+export interface PlanDef {
   id: string;
-  name: string;
-  description: string;
-}
-
-export interface Plan {
-  id: string;
-  name: string;
-  price: number;
-  currency: string;
-  period: string;
-  description: string;
+  nombre: string;
+  precio: number;
+  periodo?: string;
+  descripcion: string;
   features: string[];
-  buttonText: string;
-  href: string;
-  badge?: string;
+  cta: string;
+  popular?: boolean;
   requiereGrado?: boolean;
-  suboptions?: SubOption[];
+  tipo?: 'maestro' | 'directivo';
 }
 
 export const GRADOS = [
-  { id: 'preescolar',  label: 'Preescolar'  },
-  { id: '1_primaria',  label: '1° Primaria' },
-  { id: '2_primaria',  label: '2° Primaria' },
-  { id: '3_primaria',  label: '3° Primaria' },
-  { id: '4_primaria',  label: '4° Primaria' },
-  { id: '5_primaria',  label: '5° Primaria' },
-  { id: '6_primaria',  label: '6° Primaria' },
+  { id: 'preescolar', label: 'Preescolar'  },
+  { id: '1_primaria', label: '1° Primaria' },
+  { id: '2_primaria', label: '2° Primaria' },
+  { id: '3_primaria', label: '3° Primaria' },
+  { id: '4_primaria', label: '4° Primaria' },
+  { id: '5_primaria', label: '5° Primaria' },
+  { id: '6_primaria', label: '6° Primaria' },
 ];
 
-export const PLANS: Record<string, Plan> = {
-  GRATUITO: {
+export const PLANS: Record<string, PlanDef> = {
+  gratuito: {
     id: 'gratuito',
-    name: 'Gratuito',
-    price: 0,
-    currency: 'MXN',
-    period: 'año',
-    description: 'Crea tu cuenta gratis. Paga por cada documento que quieras descargar',
+    nombre: 'Gratuito',
+    precio: 0,
+    descripcion: 'Crea tu cuenta gratis. Paga por cada documento que quieras descargar',
     features: [
       'Acceso al catálogo completo',
       'Compra documentos individuales ($0–$150)',
-      'Paga solo lo que necesitas',
+      'Paga solo lo que necesites',
     ],
-    buttonText: 'Crear cuenta gratis',
-    href: '/auth/register',
+    cta: 'Crear cuenta gratis',
+    popular: false,
   },
-
-  GRADO: {
+  grado: {
     id: 'grado',
-    name: 'Por Grado',
-    price: 499,
-    currency: 'MXN',
-    period: 'año',
-    description: 'Acceso a TODO el contenido del grado que elijas',
-    requiereGrado: true,
+    nombre: 'Por Grado',
+    precio: 499,
+    periodo: 'año',
+    descripcion: 'Acceso a TODO el contenido del grado que elijas',
     features: [
       'Todos los documentos de tu grado',
       'Sin límite de descargas',
       'Por 365 días',
+      'Planeaciones NEM 2022',
+      'Material para clase',
     ],
-    buttonText: 'Suscribirse',
-    href: '/checkout?plan=grado',
+    cta: 'Suscribirse',
+    popular: false,
+    requiereGrado: true,
+    tipo: 'maestro',
   },
-
-  PRO_MAESTRO: {
+  pro_maestro: {
     id: 'pro_maestro',
-    name: 'Pro Maestro',
-    price: 999,
-    currency: 'MXN',
-    period: 'año',
-    description: 'Acceso a TODO el contenido de TODOS los grados',
-    badge: 'Más popular',
+    nombre: 'Pro Maestro',
+    precio: 999,
+    periodo: 'año',
+    descripcion: 'Acceso a TODO el contenido de TODOS los grados',
     features: [
-      'Todos los documentos, todos los grados',
+      'Todos los documentos',
+      'Todos los grados (Preescolar + Primaria)',
       'Sin límite de descargas',
-      'Diario de clase',
       'Por 365 días',
+      'Evaluaciones avanzadas',
+      'Diario de clase',
     ],
-    buttonText: 'Suscribirse',
-    href: '/checkout?plan=pro_maestro',
+    cta: 'Suscribirse',
+    popular: true,
+    tipo: 'maestro',
   },
-
-  PRO_DIRECTIVO: {
+  pro_directivo: {
     id: 'pro_directivo',
-    name: 'Pro Directivo',
-    price: 999,
-    currency: 'MXN',
-    period: 'año',
-    description: 'Acceso completo incluyendo recursos CTE para directivos',
+    nombre: 'Pro Directivo',
+    precio: 999,
+    periodo: 'año',
+    descripcion: 'Todo lo de Pro Maestro + recursos exclusivos para directivos',
     features: [
-      'Todo lo de Pro Maestro',
+      'Todo lo incluido en Pro Maestro',
       'Recursos CTE completos',
       'Documentos administrativos',
-      'Por 365 días',
+      'Reportes para directivos',
+      'Actas y minutas de CTE',
+      'Gestión escolar NEM',
     ],
-    buttonText: 'Suscribirse',
-    href: '/checkout?plan=pro_directivo',
-  },
-
-  // Alias de compatibilidad hacia atrás
-  PRO: {
-    id: 'pro',
-    name: 'Pro Maestro',
-    price: 999,
-    currency: 'MXN',
-    period: 'año',
-    description: 'Acceso a TODO el contenido de TODOS los grados',
-    features: ['Todos los documentos, todos los grados', 'Sin límite de descargas'],
-    buttonText: 'Suscribirse',
-    href: '/checkout?plan=pro_maestro',
+    cta: 'Suscribirse',
+    popular: false,
+    tipo: 'directivo',
   },
 };
 
 export type PlanId = 'gratuito' | 'grado' | 'pro_maestro' | 'pro_directivo' | 'pro';
 
-export function getPlan(id: string): Plan {
-  const key = id.toUpperCase().replace('-', '_');
-  return PLANS[key] ?? PLANS.GRATUITO;
+export function getPlan(id: string): PlanDef {
+  return PLANS[id] ?? PLANS.gratuito;
 }
 
-/** Planes que tienen acceso a recursos/planeaciones (cualquier grado) */
+/** Planes con acceso a recursos/planeaciones */
 export const planTieneAccesoRecursos = (planType: string): boolean =>
   ['grado', 'pro_maestro', 'pro_directivo', 'pro'].includes(planType);
 
