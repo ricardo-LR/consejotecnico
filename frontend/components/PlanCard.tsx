@@ -36,8 +36,8 @@ export default function PlanCard({ planId, featured = false }: PlanCardProps) {
   }
 
   const priceDisplay =
-    plan.price === 0 ? 'Gratis' : `$${plan.price.toLocaleString('es-MX')}`;
-  const periodDisplay = plan.price === 0 ? '' : ` / ${plan.period}`;
+    plan.precio === 0 ? 'Gratis' : `$${plan.precio.toLocaleString('es-MX')}`;
+  const periodDisplay = plan.precio === 0 ? '' : ` / ${plan.periodo}`;
 
   return (
     <div
@@ -47,15 +47,15 @@ export default function PlanCard({ planId, featured = false }: PlanCardProps) {
           : 'bg-white text-gray-900 hover:shadow-xl'
       }`}
     >
-      {featured && plan.badge && (
+      {featured && plan.popular && (
         <div className="absolute top-0 right-0 -translate-y-1/2 bg-yellow-400 text-gray-900 px-4 py-1 rounded-full font-bold text-sm">
-          {plan.badge}
+          Más popular
         </div>
       )}
 
-      <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
+      <h3 className="text-2xl font-bold mb-2">{plan.nombre}</h3>
       <p className={`text-sm mb-4 ${featured ? 'text-blue-100' : 'text-gray-600'}`}>
-        {plan.description}
+        {plan.descripcion}
       </p>
 
       <div className="mb-6">
@@ -84,31 +84,9 @@ export default function PlanCard({ planId, featured = false }: PlanCardProps) {
             : 'bg-blue-600 text-white hover:bg-blue-700'
         }`}
       >
-        {plan.id === 'gratuito' && loggedIn ? 'Ver catálogo' : plan.buttonText}
+        {plan.id === 'gratuito' && loggedIn ? 'Ver catálogo' : plan.cta}
       </button>
 
-      {'suboptions' in plan && plan.suboptions && (
-        <div className={`mt-6 pt-6 border-t ${featured ? 'border-blue-400' : 'border-gray-200'}`}>
-          <p className={`text-sm font-semibold mb-3 ${featured ? 'text-blue-100' : 'text-gray-600'}`}>
-            Elige tu versión:
-          </p>
-          <div className="space-y-2">
-            {plan.suboptions.map((option) => (
-              <div
-                key={option.id}
-                className={`w-full py-2 px-3 rounded text-sm ${
-                  featured ? 'bg-blue-500' : 'bg-gray-100'
-                }`}
-              >
-                <strong>{option.name}</strong>
-                <div className={`text-xs ${featured ? 'text-blue-100' : 'text-gray-600'}`}>
-                  {option.description}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
