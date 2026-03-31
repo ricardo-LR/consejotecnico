@@ -61,19 +61,38 @@ const pricingPlans = [
     popular: false,
   },
   {
-    name: 'Pro',
+    name: 'Pro Maestro',
     price: '$999',
     subtitle: '/año',
     description: 'Acceso a TODO el contenido de TODOS los grados',
     features: [
       'Todos los documentos',
-      'Todos los grados',
+      'Todos los grados (Preescolar + Primaria)',
       'Sin límite de descargas',
       'Por 365 días',
+      'Diario de clase',
     ],
     cta: 'Suscribirse',
-    href: '/checkout?plan=pro',
+    href: '/checkout?plan=pro_maestro',
     popular: true,
+    tipo: 'maestro',
+  },
+  {
+    name: 'Pro Directivo',
+    price: '$999',
+    subtitle: '/año',
+    description: 'Todo lo de Pro Maestro + recursos CTE para directivos',
+    features: [
+      'Todo lo de Pro Maestro',
+      'Recursos CTE completos',
+      'Documentos administrativos',
+      'Actas y minutas de CTE',
+      'Gestión escolar NEM',
+    ],
+    cta: 'Suscribirse',
+    href: '/checkout?plan=pro_directivo',
+    popular: false,
+    tipo: 'directivo',
   },
 ];
 
@@ -127,12 +146,12 @@ export default function HomePage() {
 
       {/* Pricing */}
       <section className="py-20 bg-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Planes y precios</h2>
             <p className="text-gray-500 max-w-xl mx-auto">Elige el plan que mejor se adapte a tus necesidades.</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {pricingPlans.map((plan) => (
               <div
                 key={plan.name}
