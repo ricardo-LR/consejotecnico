@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { planTieneAccesoCTE } from '@/config/plans';
 
 const API_URL = 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
 
@@ -37,9 +38,18 @@ export default function DirectivoCTEPage() {
   const [ctes, setCtes] = useState<Cte[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [acceso, setAcceso] = useState<boolean | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token') ?? '';
+    if (!token) { window.location.href = '/auth/login'; return; }
+    const planType = localStorage.getItem('plan_type') ?? 'gratuito';
+    if (!planTieneAccesoCTE(planType)) {
+      setAcceso(false);
+      setLoading(false);
+      return;
+    }
+    setAcceso(true);
     fetch(`${API_URL}/cte/list?estado=produccion`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -48,6 +58,26 @@ export default function DirectivoCTEPage() {
       .catch(() => setError('No se pudieron cargar los CTEs'))
       .finally(() => setLoading(false));
   }, []);
+
+  if (acceso === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-2xl shadow max-w-md">
+          <div className="text-5xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Acceso restringido</h2>
+          <p className="text-gray-500 mb-6">
+            Los recursos CTE están disponibles exclusivamente para el Plan Pro Directivo.
+          </p>
+          <a
+            href="/checkout?plan=pro_directivo"
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-700 inline-block"
+          >
+            Ver Plan Pro Directivo →
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-8">

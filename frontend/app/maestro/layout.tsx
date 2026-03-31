@@ -89,18 +89,19 @@ export default function MaestroLayout({ children }: MaestroLayoutProps) {
       href: '/maestro/cte',
       label: 'CTE',
       icon: <BookIcon />,
+      planRequired: ['pro_directivo'],
     },
     {
       href: '/maestro/diario',
       label: 'Diario de Clase',
       icon: <BookIcon />,
-      planRequired: ['grado', 'pro'],
+      planRequired: ['grado', 'pro', 'pro_maestro', 'pro_directivo'],
     },
     {
       href: '/maestro/recursos',
       label: 'Recursos',
       icon: <FolderIcon />,
-      planRequired: ['grado', 'pro'],
+      planRequired: ['grado', 'pro', 'pro_maestro', 'pro_directivo'],
     },
   ];
 

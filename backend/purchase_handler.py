@@ -56,25 +56,28 @@ def _err(message: str, status: int = 400) -> dict:
     }
 
 
-def _upgrade_plan(email: str, plan_type: str) -> None:
+def _upgrade_plan(email: str, plan_type: str, grado: str = "") -> None:
     try:
+        now = datetime.now(timezone.utc).isoformat()
+        update_expr = "SET plan_type = :p, updatedAt = :u"
+        expr_values: dict = {":p": plan_type, ":u": now}
+        if grado:
+            update_expr += ", grado = :g"
+            expr_values[":g"] = grado
         _get_db().Table(DYNAMODB_TABLE_USERS).update_item(
             Key={"email": email},
-            UpdateExpression="SET plan_type = :p, updatedAt = :u",
-            ExpressionAttributeValues={
-                ":p": plan_type,
-                ":u": datetime.now(timezone.utc).isoformat(),
-            },
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
         )
-        print(f"[PURCHASE] Plan actualizado: {email} -> {plan_type}")
+        print(f"[PURCHASE] Plan actualizado: {email} -> {plan_type} (grado: {grado or 'N/A'})")
     except Exception as e:
         print(f"[PURCHASE] WARNING: DynamoDB plan update failed: {e}")
 
 
-def _save_purchase(email: str, plan_type: str, payment_id: str, status: str, method: str = "") -> None:
+def _save_purchase(email: str, plan_type: str, payment_id: str, status: str, method: str = "", grado: str = "") -> None:
     try:
         now = datetime.now(timezone.utc).isoformat()
-        _get_db().Table(DYNAMODB_TABLE_PURCHASES).put_item(Item={
+        item: dict = {
             "purchaseId":    str(uuid.uuid4()),
             "email":         email,
             "planType":      plan_type,
@@ -83,7 +86,10 @@ def _save_purchase(email: str, plan_type: str, payment_id: str, status: str, met
             "paymentMethod": method,
             "createdAt":     now,
             "updatedAt":     now,
-        })
+        }
+        if grado:
+            item["grado"] = grado
+        _get_db().Table(DYNAMODB_TABLE_PURCHASES).put_item(Item=item)
     except Exception as e:
         print(f"[PURCHASE] WARNING: DynamoDB save failed: {e}")
 
@@ -108,6 +114,8 @@ def handler(event, context):
     description       = body.get("description") or ""
     payer             = body.get("payer") or {}
     plan_type         = (body.get("plan_type") or "grado").strip()
+
+    grado = (body.get("grado") or "").strip()
 
     # email del usuario logueado (quién compra el plan) — nunca del payer
     email = (body.get("email") or "").strip()
@@ -196,10 +204,10 @@ def handler(event, context):
 
     print(f"[PURCHASE] Resultado: status={mp_status} detail={detail} id={payment_id}")
 
-    _save_purchase(email, plan_type, payment_id, mp_status, payment_method or payment_method_id)
+    _save_purchase(email, plan_type, payment_id, mp_status, payment_method or payment_method_id, grado)
 
     if mp_status == "approved":
-        _upgrade_plan(email, plan_type)
+        _upgrade_plan(email, plan_type, grado)
 
     message_text = (
         "¡Pago aprobado!" if mp_status == "approved"

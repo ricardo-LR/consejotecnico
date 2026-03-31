@@ -3,13 +3,16 @@
 import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getUser, getAuthToken, isLoggedIn } from '@/lib/auth';
+import { GRADOS } from '@/config/plans';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
 const MP_PUBLIC_KEY = process.env.NEXT_PUBLIC_MERCADOPAGO_KEY ?? 'TEST-c9279164-9470-4b2c-bd4c-d1ec1f3198cd';
 
 const PLANES: Record<string, { nombre: string; precio: number }> = {
-  grado: { nombre: 'Plan Por Grado - ConsejotecnicoCMS', precio: 499 },
-  pro:   { nombre: 'Plan Pro - ConsejotecnicoCMS',       precio: 999 },
+  grado:         { nombre: 'Plan Por Grado - ConsejotecnicoCMS',      precio: 499 },
+  pro_maestro:   { nombre: 'Plan Pro Maestro - ConsejotecnicoCMS',    precio: 999 },
+  pro_directivo: { nombre: 'Plan Pro Directivo - ConsejotecnicoCMS',  precio: 999 },
+  pro:           { nombre: 'Plan Pro Maestro - ConsejotecnicoCMS',    precio: 999 },
 };
 
 declare global {
@@ -22,18 +25,24 @@ function CheckoutContent() {
   const plan    = PLANES[planId] ?? PLANES.grado;
   const brickRef = useRef<any>(null);
 
-  const [status, setStatus]   = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState('');
+  const [status, setStatus]     = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [message, setMessage]   = useState('');
+  const [gradoSeleccionado, setGradoSeleccionado] = useState('');
+  const [paso, setPaso]         = useState<'seleccionar_grado' | 'pago'>(
+    planId === 'grado' ? 'seleccionar_grado' : 'pago'
+  );
 
   useEffect(() => {
     if (!isLoggedIn()) {
       window.location.href = `/auth/login?redirect=/checkout?plan=${planId}`;
       return;
     }
-    const u = getUser();
-    loadMPScript(u);
+    if (paso === 'pago') {
+      const u = getUser();
+      loadMPScript(u);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [paso]);
 
   function loadMPScript(u: any) {
     if (document.querySelector('script[src*="mercadopago"]')) {
@@ -108,6 +117,7 @@ function CheckoutContent() {
 
                 const body: any = {
                   plan_type:      planId,
+                  grado:          gradoSeleccionado || undefined,
                   email:          currentUser?.email || '',
                   payment_method: selectedPaymentMethod,
                   ...formData,
@@ -188,6 +198,53 @@ function CheckoutContent() {
       setStatus('error');
       setMessage('Error iniciando formulario de pago');
     }
+  }
+
+  // ── Selector de grado (solo para plan=grado) ────────────────────────────
+  if (paso === 'seleccionar_grado') {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="max-w-xl mx-auto">
+          <a href="/dashboard" className="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block">
+            ← Volver al Dashboard
+          </a>
+          <h1 className="text-2xl font-bold text-gray-800 mb-1">Plan Por Grado</h1>
+          <p className="text-gray-500 mb-6 text-sm">Selecciona el grado del que eres maestro</p>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-4">
+            <p className="text-sm font-semibold text-gray-700 mb-3">¿De qué grado eres maestro?</p>
+            <div className="grid grid-cols-2 gap-3">
+              {GRADOS.map((grado) => (
+                <button
+                  key={grado.id}
+                  onClick={() => setGradoSeleccionado(grado.id)}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    gradoSeleccionado === grado.id
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-800'
+                  }`}
+                >
+                  <span className="font-medium text-sm">{grado.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => { if (gradoSeleccionado) setPaso('pago'); }}
+              disabled={!gradoSeleccionado}
+              className="w-full mt-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-colors"
+            >
+              {gradoSeleccionado ? 'Continuar al pago →' : 'Selecciona un grado'}
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex justify-between items-center">
+            <p className="text-sm text-gray-600">Plan Por Grado</p>
+            <p className="text-xl font-bold text-blue-600">$499 <span className="text-sm font-normal text-gray-500">MXN/año</span></p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (status === 'success') {
