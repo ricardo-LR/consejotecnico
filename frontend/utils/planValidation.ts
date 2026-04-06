@@ -3,7 +3,7 @@
  * Mirrors the backend plan_validator.py limits.
  */
 
-export type PlanType = 'gratuito' | 'grado' | 'pro';
+export type PlanType = 'gratuito' | 'grado' | 'pro' | 'pro_maestro' | 'pro_directivo';
 
 export interface PlanLimits {
   grupos: number;
@@ -35,6 +35,24 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     recursos: true,
   },
   pro: {
+    grupos: 999999,
+    alumnosPorGrupo: 999999,
+    evaluacionesPorGrupo: 999999,
+    pdf: true,
+    imprimir: true,
+    diario: true,
+    recursos: true,
+  },
+  pro_maestro: {
+    grupos: 999999,
+    alumnosPorGrupo: 999999,
+    evaluacionesPorGrupo: 999999,
+    pdf: true,
+    imprimir: true,
+    diario: true,
+    recursos: true,
+  },
+  pro_directivo: {
     grupos: 999999,
     alumnosPorGrupo: 999999,
     evaluacionesPorGrupo: 999999,
@@ -107,18 +125,22 @@ export function canUseFeature(
 
 export function getPlanLabel(planType: string): string {
   const labels: Record<string, string> = {
-    gratuito: 'Plan Gratuito',
-    grado: 'Plan Grado',
-    pro: 'Plan Pro',
+    gratuito:     'Plan Gratuito',
+    grado:        'Plan Grado',
+    pro:          'Plan Pro',
+    pro_maestro:  'Pro Maestro',
+    pro_directivo:'Pro Directivo',
   };
   return labels[planType] ?? planType;
 }
 
 export function getPlanBadgeColor(planType: string): string {
   const colors: Record<string, string> = {
-    gratuito: 'bg-gray-100 text-gray-700',
-    grado: 'bg-blue-100 text-blue-700',
-    pro: 'bg-purple-100 text-purple-700',
+    gratuito:     'bg-gray-100 text-gray-700',
+    grado:        'bg-blue-100 text-blue-700',
+    pro:          'bg-purple-100 text-purple-700',
+    pro_maestro:  'bg-purple-100 text-purple-700',
+    pro_directivo:'bg-indigo-100 text-indigo-700',
   };
   return colors[planType] ?? 'bg-gray-100 text-gray-700';
 }

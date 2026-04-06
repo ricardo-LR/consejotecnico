@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { isLoggedIn, getUser, getPlanType, logout } from '@/lib/auth';
 
 const PLAN_BADGE: Record<string, { label: string; color: string }> = {
@@ -12,7 +12,11 @@ const PLAN_BADGE: Record<string, { label: string; color: string }> = {
 };
 
 export default function Navbar() {
-  const router = useRouter();
+  const router   = useRouter();
+  const pathname = usePathname();
+
+  // Admin panel has its own sidebar — don't render the public Navbar there
+  if (pathname?.startsWith('/admin')) return null;
   const [showMenu, setShowMenu] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);

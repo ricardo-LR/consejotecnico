@@ -5,19 +5,19 @@ import { useEffect, useState } from 'react';
 const API_URL = 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
 
 interface Stats {
-  totalUsuarios:   number;
-  usuariosGrado:   number;
-  usuariosPro:     number;
-  usuariosGratis:  number;
-  totalPagos:      number;
-  ingresoTotal:    number;
+  totalUsuarios:        number;
+  usuariosGrado:        number;
+  usuariosProMaestro:   number;
+  usuariosProDirectivo: number;
+  usuariosGratis:       number;
+  totalPagos:           number;
+  ingresoTotal:         number;
 }
 
 interface Transaction {
   purchaseId: string;
   email:      string;
   planType:   string;
-  price:      string;
   status:     string;
   createdAt:  string;
 }
@@ -41,18 +41,20 @@ export default function AdminDashboardPage() {
         const ul = users.items ?? [];
         const pl = purchases.items ?? [];
 
+        const PRECIO_PLAN: Record<string, number> = { grado: 499, pro_maestro: 999, pro_directivo: 999, pro: 999 };
         setStats({
-          totalUsuarios:  ul.length,
-          usuariosGrado:  ul.filter((u: any) => u.plan_type === 'grado').length,
-          usuariosPro:    ul.filter((u: any) => u.plan_type === 'pro').length,
-          usuariosGratis: ul.filter((u: any) => !u.plan_type || u.plan_type === 'gratuito').length,
-          totalPagos:     pl.length,
-          ingresoTotal:   pl.reduce((s: number, p: any) => s + (parseFloat(p.price) || 0), 0),
+          totalUsuarios:        ul.length,
+          usuariosGrado:        ul.filter((u: any) => u.plan_type === 'grado').length,
+          usuariosProMaestro:   ul.filter((u: any) => ['pro_maestro', 'pro'].includes(u.plan_type)).length,
+          usuariosProDirectivo: ul.filter((u: any) => u.plan_type === 'pro_directivo').length,
+          usuariosGratis:       ul.filter((u: any) => !u.plan_type || u.plan_type === 'gratuito').length,
+          totalPagos:           pl.length,
+          ingresoTotal:         pl.filter((p: any) => p.status === 'COMPLETED').reduce((s: number, p: any) => s + (PRECIO_PLAN[p.planType] || 0), 0),
         });
         setTxns(pl.slice(0, 10));
       } catch {
         // show zeros on error
-        setStats({ totalUsuarios: 0, usuariosGrado: 0, usuariosPro: 0, usuariosGratis: 0, totalPagos: 0, ingresoTotal: 0 });
+        setStats({ totalUsuarios: 0, usuariosGrado: 0, usuariosProMaestro: 0, usuariosProDirectivo: 0, usuariosGratis: 0, totalPagos: 0, ingresoTotal: 0 });
       } finally {
         setLoading(false);
       }
@@ -62,12 +64,13 @@ export default function AdminDashboardPage() {
 
   const STAT_CARDS = stats
     ? [
-        { label: 'Total Usuarios',   value: stats.totalUsuarios,                    color: 'bg-blue-50 text-blue-700'  },
-        { label: 'Plan Grado',       value: stats.usuariosGrado,                    color: 'bg-green-50 text-green-700' },
-        { label: 'Plan Pro',         value: stats.usuariosPro,                      color: 'bg-purple-50 text-purple-700' },
-        { label: 'Plan Gratis',      value: stats.usuariosGratis,                   color: 'bg-gray-50 text-gray-700'  },
-        { label: 'Total Pagos',      value: stats.totalPagos,                       color: 'bg-yellow-50 text-yellow-700' },
-        { label: 'Ingresos (MXN)',   value: `$${stats.ingresoTotal.toFixed(2)}`,    color: 'bg-emerald-50 text-emerald-700' },
+        { label: 'Total Usuarios',    value: stats.totalUsuarios,                    color: 'bg-blue-50 text-blue-700'    },
+        { label: 'Plan Grado',        value: stats.usuariosGrado,                    color: 'bg-green-50 text-green-700'  },
+        { label: 'Pro Maestro',       value: stats.usuariosProMaestro,               color: 'bg-purple-50 text-purple-700' },
+        { label: 'Pro Directivo',     value: stats.usuariosProDirectivo,             color: 'bg-indigo-50 text-indigo-700' },
+        { label: 'Plan Gratis',       value: stats.usuariosGratis,                   color: 'bg-gray-50 text-gray-700'    },
+        { label: 'Total Pagos',       value: stats.totalPagos,                       color: 'bg-yellow-50 text-yellow-700' },
+        { label: 'Ingresos (MXN)',    value: `$${stats.ingresoTotal.toLocaleString('es-MX')}`, color: 'bg-emerald-50 text-emerald-700' },
       ]
     : [];
 
@@ -110,7 +113,7 @@ export default function AdminDashboardPage() {
                     <tr key={t.purchaseId} className="hover:bg-gray-50">
                       <td className="px-6 py-3 text-gray-800">{t.email}</td>
                       <td className="px-6 py-3 capitalize">{t.planType}</td>
-                      <td className="px-6 py-3">${parseFloat(t.price || '0').toFixed(2)} MXN</td>
+                      <td className="px-6 py-3">${({ grado: 499, pro_maestro: 999, pro_directivo: 999, pro: 999 } as Record<string,number>)[t.planType] ?? '—'} MXN</td>
                       <td className="px-6 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           t.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
