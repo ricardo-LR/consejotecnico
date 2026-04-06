@@ -23,10 +23,17 @@ DYNAMODB_TABLE_PURCHASES = os.environ.get("DYNAMODB_TABLE_PURCHASES", "consejote
 AWS_REGION               = os.environ.get("AWS_REGION", "us-east-1")
 WEBHOOK_URL              = "https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev/webhook/mercadopago"
 
-PRECIOS = {"grado": 499, "pro": 999}
+PRECIOS = {
+    "grado":         499,
+    "pro_maestro":   999,
+    "pro_directivo": 999,
+    "pro":           999,   # alias legacy
+}
 NOMBRES = {
-    "grado": "Plan Por Grado - ConsejotecnicoCMS",
-    "pro":   "Plan Pro - ConsejotecnicoCMS",
+    "grado":         "Plan Por Grado - ConsejotecnicoCMS",
+    "pro_maestro":   "Plan Pro Maestro - ConsejotecnicoCMS",
+    "pro_directivo": "Plan Pro Directivo - ConsejotecnicoCMS",
+    "pro":           "Plan Pro Maestro - ConsejotecnicoCMS",
 }
 
 _db = None

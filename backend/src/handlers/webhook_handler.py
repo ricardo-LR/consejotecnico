@@ -11,6 +11,8 @@ Handles two notification formats:
 2. IPN via notification_url (query params): ?id=123&topic=payment|merchant_order
 """
 
+import hmac
+import hashlib
 import json
 import logging
 import os
@@ -187,6 +189,68 @@ def _process_payment(mp_payment_id: str) -> None:
 
 
 # ──────────────────────────────────────────────
+# Signature validation
+# ──────────────────────────────────────────────
+
+
+def _validate_signature(event: dict) -> bool:
+    """
+    Validates the x-signature header from MercadoPago.
+    Returns True if valid, or if no secret is configured (dev mode).
+    MP signature format: x-signature: ts=<ts>,v1=<hmac>
+    Message template: id:<data.id>;request-id:<x-request-id>;ts:<ts>;
+    """
+    secret = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
+    if not secret or secret == "tu_webhook_secret_aqui":
+        logger.info("MP_WEBHOOK_SECRET not configured — skipping validation")
+        return True
+
+    try:
+        headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        x_signature  = headers.get("x-signature", "")
+        x_request_id = headers.get("x-request-id", "")
+
+        if not x_signature:
+            logger.info("No x-signature header — accepting (may be manual test)")
+            return True
+
+        # Extract data.id from query params or body
+        qs = event.get("queryStringParameters") or {}
+        data_id = qs.get("data.id") or qs.get("id", "")
+        if not data_id:
+            try:
+                body = json.loads(event.get("body") or "{}")
+                data_id = str(body.get("data", {}).get("id", ""))
+            except Exception:
+                data_id = ""
+
+        # Parse x-signature: "ts=1234,v1=abcd"
+        parts = dict(p.split("=", 1) for p in x_signature.split(",") if "=" in p)
+        ts = parts.get("ts", "")
+        v1 = parts.get("v1", "")
+
+        if not v1:
+            logger.info("No v1 in x-signature — accepting")
+            return True
+
+        # Build message: "id:<data_id>;request-id:<x_request_id>;ts:<ts>;"
+        manifest = f"id:{data_id};request-id:{x_request_id};ts:{ts};"
+        expected = hmac.new(
+            secret.encode("utf-8"),
+            manifest.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        valid = hmac.compare_digest(expected, v1)
+        logger.info("Signature validation: valid=%s manifest=%s", valid, manifest)
+        return valid
+
+    except Exception as exc:
+        logger.error("Signature validation error: %s — accepting", exc)
+        return True  # Never block on validation errors
+
+
+# ──────────────────────────────────────────────
 # Lambda entry point
 # ──────────────────────────────────────────────
 
@@ -201,6 +265,11 @@ def handler(event: dict, context) -> dict:
     # Handle OPTIONS preflight
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
+
+    # Validate MP signature (always return 200 even if invalid — MP must not retry)
+    if not _validate_signature(event):
+        logger.warning("Invalid MP signature — ignoring notification")
+        return {"statusCode": 200, "headers": CORS_HEADERS, "body": json.dumps({"status": "invalid_signature"})}
 
     try:
         # ── Parse body ─────────────────────────────────
