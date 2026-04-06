@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isLoggedIn, getPlanType } from '@/lib/auth';
 
 const API_URL = 'https://ceatmeuuhb.execute-api.us-east-1.amazonaws.com/dev';
 
@@ -38,11 +39,29 @@ const FILE_LABELS: Record<string, string> = {
 };
 
 export default function MaestroCTEPage() {
-  const [ctes, setCtes]       = useState<Cte[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
+  const [ctes, setCtes]           = useState<Cte[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [mounted, setMounted]     = useState(false);
+  const [planType, setPlanType]   = useState('');
+  const [tieneAcceso, setAcceso]  = useState(false);
 
   useEffect(() => {
+    if (!isLoggedIn()) {
+      window.location.href = '/auth/login';
+      return;
+    }
+    const plan = getPlanType() || 'gratuito';
+    setPlanType(plan);
+    const acceso = plan === 'pro_directivo';
+    setAcceso(acceso);
+    setMounted(true);
+
+    if (!acceso) {
+      setLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem('token') ?? '';
     fetch(`${API_URL}/cte/list?estado=produccion`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -52,6 +71,30 @@ export default function MaestroCTEPage() {
       .catch(() => setError('No se pudieron cargar los CTEs'))
       .finally(() => setLoading(false));
   }, []);
+
+  if (!mounted) return null;
+
+  if (!tieneAcceso) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center p-8 bg-white rounded-2xl shadow-sm border max-w-md mx-auto">
+          <div className="text-6xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Acceso restringido</h2>
+          <p className="text-gray-500 mb-2">Los recursos CTE son exclusivos del</p>
+          <p className="font-semibold text-purple-700 mb-4">Plan Pro Directivo</p>
+          <p className="text-sm text-gray-400 mb-6">
+            Tu plan actual: <span className="capitalize font-medium">{planType || 'gratuito'}</span>
+          </p>
+          <a
+            href="/catalogo"
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-medium inline-block transition-colors"
+          >
+            Ver Plan Pro Directivo →
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

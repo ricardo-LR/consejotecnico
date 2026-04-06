@@ -160,22 +160,15 @@ export default function MaestroLayout({ children }: MaestroLayoutProps) {
           {allLinks.map((link) => {
             const isLocked = link.planRequired && !link.planRequired.includes(planType);
             const isActive = pathname === link.href;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : isLocked
-                    ? 'text-gray-400 hover:bg-gray-50'
-                    : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-              >
-                <span className={isLocked ? 'opacity-50' : ''}>{link.icon}</span>
-                <span className={isLocked ? 'opacity-60' : ''}>{link.label}</span>
-                {isLocked && (
+            if (isLocked) {
+              return (
+                <div
+                  key={link.href}
+                  title={`Requiere plan: ${link.planRequired?.join(' o ')}`}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 cursor-not-allowed select-none"
+                >
+                  <span className="opacity-50">{link.icon}</span>
+                  <span className="opacity-60">{link.label}</span>
                   <svg className="w-3.5 h-3.5 ml-auto text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
@@ -183,7 +176,19 @@ export default function MaestroLayout({ children }: MaestroLayoutProps) {
                       clipRule="evenodd"
                     />
                   </svg>
-                )}
+                </div>
+              );
+            }
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setSidebarOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  ${isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+              >
+                {link.icon}
+                {link.label}
               </Link>
             );
           })}
